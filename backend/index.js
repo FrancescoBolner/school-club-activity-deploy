@@ -216,6 +216,22 @@ app.delete('/event/:eventid', (req, res) => {
     })
 })
 
+app.put('/clubs/:clubName', (req, res) => {
+    // Cerate the UPDATE query
+    const q = "UPDATE clubs SET description = ?, memberMax = ? WHERE clubName = ?"
+    const values = [
+      req.body.description,
+      req.body.memberMax,
+      req.body.clubName
+    ]
+
+    // Execute the query
+    db.query(q, values, (err, data) => {
+        if (err) return res.json(err)
+        return res.json("Club joined successfully")
+    })
+})
+
 app.put('/joinClubs/:clubName', (req, res) => {
     // Cerate the UPDATE query
     const q = "UPDATE person SET club = ? WHERE username = ? AND password = ?"
@@ -245,6 +261,18 @@ app.put('/expell/:username', (req, res) => {
 app.put('/accept/:username', (req, res) => {
     // Cerate the UPDATE query
     const q = "UPDATE person SET role = 'CM' WHERE username = ?"
+    const username = req.params.username
+
+    // Execute the query
+    db.query(q, username, (err, data) => {
+        if (err) return res.json(err)
+        return res.json("Club joined successfully")
+    })
+})
+
+app.put('/reject/:username', (req, res) => {
+    // Cerate the UPDATE query
+    const q = "UPDATE person SET club = NULL WHERE username = ?"
     const username = req.params.username
 
     // Execute the query

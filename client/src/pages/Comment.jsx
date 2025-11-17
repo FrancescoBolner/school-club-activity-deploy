@@ -4,7 +4,7 @@ import { React, useState } from "react"
 import axios from "axios"
 import { Link, useNavigate, useLocation } from "react-router-dom"
 
-const CreateClub = () => {
+const CommentPage = () => {
     // Get club name from URL
     const location = useLocation()
     const clubName = location.pathname.split("/")[2]
@@ -54,4 +54,4 @@ const CreateClub = () => {
     )
 }
 
-export default CreateClub
+export default CommentPage

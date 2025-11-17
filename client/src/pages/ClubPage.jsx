@@ -76,6 +76,15 @@ const ClubPage = () => {
         }
     }
 
+    const handleReject = async (username) => {
+        try {
+            await axios.put("http://localhost:3000/reject/" + username)
+            window.location.reload()
+        } catch (err) {
+            console.error(err)
+        }
+    }
+
     const handlePromote = async (username) => {
         try {
             await axios.put("http://localhost:3000/promote/" + username)
@@ -126,17 +135,21 @@ const ClubPage = () => {
             <button><Link to={"/UpdateClub/" + clubName}>Update Info</Link></button>
             <div className="events">
                 <h3 style={{margin: "0 0 0.5rem 0"}}>Events:</h3>
-                {events.map((event) => (
-                <div className="event" key={event.eventid}>
-                    <div className="event-header">
-                    <h2>{event.title}</h2>
-                    <span className="event-date">{new Date(event.date).toLocaleDateString('en-GB')}</span>
+                {events.length === 0 ? (
+                        <div>
+                            <p style={{ textAlign: "center", opacity: 0.6 }}>No events yet</p>
+                        </div>
+                    ) : events.map((event) => (
+                    <div className="event" key={event.eventid}>
+                        <div className="event-header">
+                            <h2>{event.title}</h2>
+                            <span className="event-date">{new Date(event.date).toLocaleDateString('en-GB')}</span>
+                        </div>
+                        <p className="event-description">{event.description}</p>
+                        <div className="actions">
+                            <button className="deletebtn" onClick={() => handleDelateEvent(event.eventid)}>Delete Event</button>
+                        </div>
                     </div>
-                    <p className="event-description">{event.description}</p>
-                    <div className="actions">
-                    <button className="deletebtn" onClick={() => handleDelateEvent(event.eventid)}>Delete Event</button>
-                    </div>
-                </div>
                 ))}
                 <div style={{marginTop: "0.5rem"}}>
                 <button><Link to={"/CreateEvent/" + clubName}>Create Event</Link></button>
@@ -161,9 +174,10 @@ const ClubPage = () => {
                                 <tr key={p.username}>
                                     <td>{p.username}</td>
                                     <td>{p.role}</td>
-                                    <td><button className="deletebtn" onClick={() => handleExpell(p.username)}>Expell</button>
-                                    {p.role === "CM" && (<button onClick={() => handlePromote(p.username)} style={{margin: "0 0 0 0.5rem"}}>Promote</button>)}
-                                    {p.role === "VP" && (<button onClick={() => handleAccept(p.username)} style={{margin: "0 0 0 0.5rem"}}>Depromote</button>)}
+                                    <td>
+                                        {p.role !== "CL" && (<button className="deletebtn" onClick={() => handleExpell(p.username)}>Expell</button>)}
+                                        {p.role === "CM" && (<button onClick={() => handlePromote(p.username)} style={{margin: "0 0 0 0.5rem"}}>Promote</button>)}
+                                        {p.role === "VP" && (<button onClick={() => handleAccept(p.username)} style={{margin: "0 0 0 0.5rem"}}>Depromote</button>)}
                                     </td>
                                 </tr>
                             ))}
@@ -178,10 +192,19 @@ const ClubPage = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {person.filter((p) => p.role === "STU").map((p) => (
+                            {person.filter((p) => p.role === "STU").length === 0 ? (
+                                    <tr>
+                                        <td colSpan="2" style={{ textAlign: "center", opacity: 0.6 }}>
+                                            No enrollment
+                                        </td>
+                                    </tr>
+                                ) : person.filter((p) => p.role === "STU").map((p) => (
                                 <tr key={p.username}>
                                     <td>{p.username}</td>
-                                    <td><button onClick={() => handleAccept(p.username)}>Accept</button></td>
+                                    <td>
+                                        <button onClick={() => handleAccept(p.username)}>Accept</button>
+                                        <button onClick={() => handleReject(p.username)} style={{margin: "0 0 0 0.5rem"}}>Reject</button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -190,24 +213,26 @@ const ClubPage = () => {
                 </div>
                 <h3 style={{marginTop: "0.6rem"}}>Comments:</h3>
                 <div className="comments-list">
-                    {comments.map((c) => (
-                    <div className="comment" key={c.commentid}>
-                        <div className="comment-header">
-                        <div style={{fontWeight: 700, color: "#0f172a"}}>{c.username}</div>
-                        <div className="comment-meta">{new Date(c.date).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+                    {comments.length === 0 ? (
+                        <div>
+                            <p style={{ textAlign: "center", opacity: 0.6 }}>No comments yet</p>
                         </div>
-
-                        <div className="comment-body">
-                        {c.comment}
+                    ) : comments.map((c) => (
+                        <div className="comment" key={c.commentid}>
+                            <div className="comment-header">
+                                <div style={{fontWeight: 700, color: "#0f172a"}}>{c.username}</div>
+                                <div className="comment-meta">{new Date(c.date).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+                            </div>
+                            <div className="comment-body">
+                                {c.comment}
+                            </div>
+                            <div className="comment-footer">
+                                <div className="rating">⭐ {c.rating}/5</div>
+                                <div style={{marginLeft: "auto"}}>
+                                    <button className="deletebtn" onClick={() => handleDeleteComment(c.commentid)}>Delete</button>
+                                </div>
+                            </div>
                         </div>
-
-                        <div className="comment-footer">
-                        <div className="rating">⭐ {c.rating}/5</div>
-                        <div style={{marginLeft: "auto"}}>
-                            <button className="deletebtn" onClick={() => handleDeleteComment(c.commentid)}>Delete</button>
-                        </div>
-                        </div>
-                    </div>
                     ))}
                     <button><Link to={"/Comment/" + clubName}>Comment</Link></button>
                 </div>
