@@ -50,67 +50,92 @@ CREATE TABLE `comments` (
     CONSTRAINT `comments_ibfk_4` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE = InnoDB AUTO_INCREMENT = 12 DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci
 
--- ====== CLUBS (parents: must exist before persons/events/comments) ======
+-- ===== CLUBS (parents) =====
 INSERT INTO clubs (clubName, description, memberCount, memberMax) VALUES
-('Ski', 'Mountain adventurers: apres-ski, hot chocolate battles and occasional avalanche avoidance.', 4, 30),
-('Basketball', 'Hoops, trash-talk, and gym-floor legends.', 5, 40),
-('Baseball', 'Sun, bats, and the slow-burning rivalry with the Soccer club.', 3, 25),
-('Chess', 'Quiet intensity, checkmates at midnight, and stolen pawns.', 6, 20),
-('Music', 'Jam sessions, terrible karaoke and one glorious perfect chord.', 7, 30),
-('Drama', 'Costumes, last-minute line changes and the yearly tragedy-turned-comedy. ', 5, 25);
+('Ski', 'Mountain adventurers: apres-ski, hot chocolate battles and occasional avalanche avoidance.', 0, 30),
+('Basketball', 'Hoops, trash-talk, and gym-floor legends.', 0, 40),
+('Baseball', 'Sun, bats, and the slow-burning rivalry with the Soccer club.', 0, 25),
+('Chess', 'Quiet intensity, checkmates at midnight, and stolen pawns.', 0, 20),
+('Music', 'Jam sessions, terrible karaoke and one glorious perfect chord.', 0, 30),
+('Drama', 'Costumes, last-minute line changes and the yearly tragedy-turned-comedy.', 0, 25),
+('Photography', 'From long exposures to short temper', 0, 20),
+('Robotics', 'Solder, code, and the occasional smoke test.', 0, 18);
 
--- ====== PERSON (users) ======
+-- ===== PERSONS =====
 INSERT INTO person (username, password, role, club, sessionId) VALUES
 ('Francesco', '123456', 'CL', 'Ski', NULL),
-('Giorgie', 'password', 'CL', 'Basketball', 'akenfue3kd'),
-('Ayoub', 'ayoub1', 'STU', 'Basketball', NULL),
 ('Samuele', 'gocciole', 'CM', 'Ski', NULL),
-('Ari', 'ari_pw', 'STU', 'Ski', NULL),
-('Luca', 'l0v3code', 'VP', 'Chess', 'sess_9a1b2c'),
-('Martina', 'martina!', 'STU', 'Music', NULL),
-('Elena', 'el3na', 'STU', NULL, NULL),
+('Ari', 'ari_pw', 'CM', 'Ski', NULL),
+('Davide', 'skiman', 'STU', 'Ski', NULL),
+('Bea', 'beapwd', 'VP', 'Ski', NULL),
+('Giorgie', 'password', 'CL', 'Basketball', 'akenfue3kd'),
+('Ayoub', 'ayoub1', 'CM', 'Basketball', NULL),
+('Asia', 'ballerz', 'CM', 'Basketball', NULL),
+('MartaB', 'martaBpw', 'STU', NULL, NULL),
+('Rico', 'ric0', 'VP', 'Basketball', NULL),
 ('Marco', 'basehit', 'CL', 'Baseball', 'sess_base45'),
-('Zoe', 'zoe123', 'STU', 'Drama', NULL),
-('Nina', 'pianist', 'CM', 'Music', 'sess_mus99'),
-('Paolo', 'paolo_pw', 'STU', 'Chess', NULL),
-('Clara', 'clara_pw', 'VP', 'Drama', 'sess_dr12');
+('Tom', 'tom_pw', 'CM', 'Baseball', NULL),
+('Sara', 'sara_pw', 'CM', 'Baseball', NULL),
+('Gabe', 'gabepw', 'STU', 'Baseball', NULL),
+('Luca', 'l0v3code', 'CL', 'Chess', 'sess_9a1b2c'),
+('Paolo', 'paolo_pw', 'CM', 'Chess', NULL),
+('Irene', 'irene_pw', 'CM', 'Chess', NULL),
+('Roberto', 'ciao', 'STU', NULL, NULL),
+('Nina', 'pianist', 'CL', 'Music', 'sess_mus99'),
+('Martina', 'martina!', 'CM', 'Music', NULL),
+('Nora', 'nora_pw', 'CM', 'Music', NULL),
+('Hugo', 'hugo_pw', 'STU', 'Music', NULL),
+('Noel', 'noel_pw', 'VP', 'Music', NULL),
+('Clara', 'clara_pw', 'CL', 'Drama', 'sess_dr12'),
+('Zoe', 'zoe123', 'CM', 'Drama', NULL),
+('LucaD', 'lucad_pw', 'CM', 'Drama', NULL),
+('Marta', 'queen123', 'STU', NULL, NULL),
+('Olga', 'olga_pw', 'CL', 'Photography', NULL),
+('Ben', 'ben_pw', 'CM', 'Photography', NULL),
+('Yara', 'yara_pw', 'CM', 'Photography', NULL),
+('Ethan', 'ethan_pw', 'STU', 'Photography', NULL),
+('Raffa', 'raffa_pw', 'CL', 'Robotics', NULL),
+('Tessa', 'tess_pw', 'CM', 'Robotics', NULL),
+('Jon', 'jon_pw', 'STU', NULL, NULL),
+('Lex', 'lex_pw', 'VP', 'Robotics', NULL),
+('Elena', 'el3na', 'STU', NULL, NULL),
+('Claudio', 'claud_pw', 'STU', NULL, NULL),
+('Gina', 'gina_pw', 'STU', 'Chess', NULL),
+('Fabio', 'fab_pw', 'CM', 'Chess', NULL),
+('Sofia', 'sofia_pw', 'CM', 'Basketball', NULL);
 
--- ====== EVENTS (each references a clubName) ======
+-- ===== EVENTS =====
 INSERT INTO events (date, title, description, clubName) VALUES
-('2025-11-02', 'Apres-ski Pancake Panic', 'The pancake stove exploded during the apres-ski. Turns out butter + campfire = chaos. Pancakes still edible.', 'Ski'),
-('2025-11-10', 'Night Hoops: 3-pt Challenge', 'Late-night friendly tournament where Giorgie swore she could beat everyone with her eyes closed.', 'Basketball'),
-('2025-10-28', 'Baseball Backfield BBQ', 'Hot dogs, a lost mitt and Marco''s legendary double play story that becomes more dramatic each telling.', 'Baseball'),
-('2025-11-15', 'Chess Blitz Marathon', 'Blitz games, whispered taunts, and one game that lasted 65 moves into the early morning.', 'Chess'),
-('2025-12-01', 'Winter Concert Rehearsal', 'Last rehearsal before the winter concert. Nina refuses to tune the piano "for authenticity".', 'Music'),
-('2025-10-31', 'Halloween Play: The Unplanned Hamlet', 'A tragicomic performance where the prince forgot his lines and the ghost improvised an epic monologue.', 'Drama'),
+('2025-10-25', 'Autumn Ski Trial', 'A small, friendly slope day; someone tried backward skiing.', 'Ski'),
+('2025-11-02', 'Apres-ski Pancake Panic', 'The pancake stove exploded during the apres-ski. Chaos and butter everywhere.', 'Ski'),
+('2025-10-30', 'Night Hoops: 3-pt Challenge', 'Late-night friendly tournament; video evidence exists.', 'Basketball'),
+('2025-11-01', 'Baseball Backfield BBQ', 'Hot dogs, lost mitt and Marco''s tall tale growing each retelling.', 'Baseball'),
+('2025-11-10', 'Chess Blitz Marathon', 'Blitz games, whispered taunts, and one marathon match.', 'Chess'),
+('2025-11-17', 'Mid-November Jam', 'Quick rehearsal session and open mic.', 'Music'),
 ('2025-11-20', 'Ski Safety Workshop', 'Learn how to fall with dignity. Hot cocoa afterward.', 'Ski'),
-('2025-12-05', 'Interclub Talent Show', 'All clubs participate: juggling, slam poetry, and an unannounced kazoo trio.', 'Music'),
-('2025-11-18', 'Friendly Match: Basketball vs. Local Teachers', 'Spoiler: teachers are surprisingly competitive.', 'Basketball'),
-('2025-11-22', 'Open Board Night', 'Casual games night with pizza — bring your own set or borrow one!', 'Chess');
+('2025-11-22', 'Friendly Match: Basketball vs. Local Teachers', 'Teachers are surprisingly competitive.', 'Basketball'),
+('2025-12-05', 'Winter Concert Rehearsal', 'Full orchestra rehearsal before the winter concert.', 'Music'),
+('2025-12-15', 'Holiday Play: Surprise', 'Full cast rehearsal for the December show.', 'Drama'),
+('2026-01-10', 'Robotics Mini-Sprint', 'Prototype challenge: make it move or regret it.', 'Robotics');
 
--- ====== COMMENTS (each references username and clubName) ======
+-- ===== COMMENTS =====
 INSERT INTO comments (date, comment, rating, username, clubName) VALUES
-('2025-10-29 09:00:00', 'Samuele ate all the gocciole!!1!', 1, 'Francesco', 'Ski'),
-('2025-11-02 10:15:00', 'Apres-ski was a success despite the pancake fiasco — Ari saved the syrup.', 5, 'Ari', 'Ski'),
-('2025-11-03 20:05:00', 'Giorgie''s no-look 3-pointer is still a myth. She did it. We have video.', 5, 'Ayoub', 'Basketball'),
-('2025-11-04 18:30:00', 'Marco hit an impossible ball that landed in the neighbor''s garden. We negotiated its return with cookies.', 4, 'Paolo', 'Baseball'),
-('2025-11-06 21:00:00', 'Luca sacrificed a rook to win by fork  — poetic.', 5, 'Clara', 'Chess'),
-('2025-12-01 19:45:00', 'Nina made the piano sound like a snowstorm. Magical and slightly off-tempo.', 5, 'Martina', 'Music'),
-('2025-10-31 22:10:00', 'The Unplanned Hamlet turned into improv gold. Zoe''s line about ham stole the show.', 5, 'Elena', 'Drama'),
-('2025-11-15 09:00:00', 'I think I learned a new opening. Or forgot the last one. Either way, good morning mates.', 4, 'Luca', 'Chess'),
-('2025-11-20 12:00:00', 'Ski Safety Workshop actually taught me how to fall without breaking something. Miracle.', 5, 'Francesco', 'Ski'),
-('2025-12-05 22:30:00', 'The kazoo trio deserves a national award. Or a fine.', 5, 'Martina', 'Music'),
-('2025-11-18 20:00:00', 'Teachers played dirty. We demand a rematch.', 3, 'Ayoub', 'Basketball'),
-('2025-11-22 19:30:00', 'Pizza and pawns: best night ever.', 5, 'Paolo', 'Chess'),
-('2025-11-10 19:10:00', 'Giorgie let us win once. She called it "strategic mercy".', 4, 'Zoe', 'Basketball'),
-('2025-11-02 11:00:00', 'Found a secret stash of marshmallows at the ski lodge. Samuele claims innocence.', 4, 'Ari', 'Ski'),
-('2025-11-05 17:00:00', 'Drama costumes almost caused a small fire. Clara''s cape is a tactical hazard.', 2, 'Elena', 'Drama'),
-('2025-11-12 14:20:00', 'We played music and the lights went out. We kept playing. It was intimate.', 5, 'Nina', 'Music'),
-('2025-11-25 10:00:00', 'Someone replaced all chess clocks with egg timers. Chaos ensued.', 4, 'Luca', 'Chess');
+('2025-10-25 18:30:00', 'Tried backward skiing — do not recommend. Davide survived.', 3, 'Davide', 'Ski'),
+('2025-11-02 11:30:00', 'Pancake Panic was wild; Samuele claimed marshmallow immunity.', 4, 'Francesco', 'Ski'),
+('2025-11-03 09:00:00', 'Found leftover syrup in my pockets. Best regrets.', 4, 'Ari', 'Ski'),
+('2025-10-30 23:00:00', 'Night Hoops was intense; Ayoub''s half-court shot made our week.', 5, 'Giorgie', 'Basketball'),
+('2025-11-15 12:00:00', 'Teachers match next week — can''t wait to see the chaos!', 0, 'Asia', 'Basketball'),
+('2025-11-01 13:00:00', 'Marco''s double play became a legend by dessert time.', 5, 'Tom', 'Baseball'),
+('2025-11-10 22:30:00', 'Blitz Marathon left me exhausted but smarter (?)', 4, 'Luca', 'Chess'),
+('2025-11-17 20:00:00', 'Mid-November Jam was cozy; Nina did a crazy run.', 5, 'Nina', 'Music'),
+('2025-11-12 10:00:00', 'Winter concert coming — practicing scales like a responsible monster.', 0, 'Martina', 'Music'),
+('2025-11-10 09:30:00', 'Holiday Play rehearsal next month — I already forgot my lines, in advance.', 0, 'Zoe', 'Drama'),
+('2025-11-05 16:00:00', 'We fried a microcontroller and learned humility.', 3, 'Raffa', 'Robotics'),
+('2025-11-08 14:00:00', 'We found a golden hour that actually looked golden. Yara captured the sunrise.', 5, 'Ben', 'Photography'),
+('2025-11-04 18:00:00', 'I''m applying to Chess — fingers crossed.', 0, 'Gina', 'Chess'),
+('2025-11-07 17:45:00', 'Applied to Ski club — hoping to join the next trip.', 0, 'Davide', 'Ski');
 
--- ====== update club memberCounts to reflect inserted people (not required but nice) ======
+-- ===== Update clubs.memberCount to match actual inserted people (counts based on above inserts) =====
 UPDATE clubs SET memberCount = (
-  SELECT COUNT(*) FROM person WHERE person.club = clubs.clubName AND NOT person.role = 'STU'
-) WHERE clubName IN ('Ski','Basketball','Baseball','Chess','Music','Drama');
-
--- ====== End of seed data ======
+  SELECT COUNT(*) FROM person WHERE person.club = clubs.clubName AND person.role IN ('CL','VP','CM')
+) WHERE clubName IN ('Ski','Basketball','Baseball','Chess','Music','Drama','Photography','Robotics');

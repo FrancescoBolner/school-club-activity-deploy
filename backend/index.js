@@ -72,7 +72,7 @@ app.get('/events/:clubName', (req, res) => {
 // Get person events by clubName
 app.get('/person/:clubName', (req, res) => {
     // Cerate the SELECT query
-    const q = "SELECT username, role FROM person WHERE club = ?"
+    const q = "SELECT username, role FROM person WHERE club = ? ORDER BY FIELD(role, 'CL', 'VP', 'CM', 'STU'), username ASC"
     const clubName = req.params.clubName
 
     // Execute the query
@@ -85,7 +85,7 @@ app.get('/person/:clubName', (req, res) => {
 // Get specific comments by clubName
 app.get('/comments/:clubName', (req, res) => {
     // Cerate the SELECT query
-    const q = "SELECT * FROM comments WHERE clubName = ?"
+    const q = "SELECT * FROM comments WHERE clubName = ? ORDER BY date DESC"
     const clubName = req.params.clubName
 
     // Execute the query
@@ -98,7 +98,7 @@ app.get('/comments/:clubName', (req, res) => {
 // Get upcoming events
 app.get('/events', (req, res) => {
     // Create the SELECT query
-    const q = "SELECT * FROM events WHERE date > NOW() ORDER BY date ASC LIMIT 10"
+    const q = "SELECT * FROM events WHERE date > NOW() ORDER BY date ASC"
 
     // Execute the query
     db.query(q, (err, data) => {
