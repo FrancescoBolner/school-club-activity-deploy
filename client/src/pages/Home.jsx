@@ -3,18 +3,7 @@
 import { React, useEffect, useState } from "react"
 import axios from "axios"
 import { Link } from "react-router-dom"
-
-// Progress bar component
-const ProgressBar = ({ percentage }) => {
-  return (
-    <div className="progress-bar-container">
-        <div className="progress-container">
-            <div className="progress-bar" style={{ width: `${percentage}%` }}></div>
-        </div>
-        {percentage.toFixed(0)}%
-    </div>
-  );
-};
+import BrowseClubs from "./BrowseClub.jsx";
 
 const Home = () => {
     // State to hold clubs and events data
@@ -47,32 +36,12 @@ const Home = () => {
         fetchData()
     }, [])
 
-    // ---> UPDTATE: Handle club deletion should be in manege club page (not home page) <---
-    const handleDelate = async (clubName) => {
-        try {
-            await axios.delete("http://localhost:3000/clubs/" + clubName)
-            window.location.reload()
-        } catch (err) {
-            console.error(err)
-        }
-    }
-
     // Render clubs and events
     return (
         <div>
             <h1>Club List</h1>
             <div className="clubs">
-                {clubs.map((club) => (
-                    <div className="club card" key={club.clubName}>
-                        <h2>{club.clubName}</h2>
-                        <p>{club.description}</p>
-                        <p>Members: {club.memberCount} / {club.memberMax}</p>
-                        <ProgressBar percentage={club.memberCount / club.memberMax * 100} />
-                        <button><Link to={`/JoinClub/${club.clubName}`}>Join Club</Link></button>
-                        <button className="deletebtn" onClick={() => handleDelate(club.clubName)}>Delate Club</button>
-                        <button><Link to={`/ClubPage/${club.clubName}`}>View Club</Link></button>
-                    </div>
-                ))}
+                {<BrowseClubs clubs={clubs} />}
             </div>
             <div className="createClub">
                 <h4>No club interest you?</h4>

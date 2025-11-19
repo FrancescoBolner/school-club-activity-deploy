@@ -98,7 +98,7 @@ app.get('/comments/:clubName', (req, res) => {
 // Get upcoming events
 app.get('/events', (req, res) => {
     // Create the SELECT query
-    const q = "SELECT * FROM events WHERE startDate > NOW() AND accepted = 1 ORDER BY startDate ASC"
+    const q = "SELECT * FROM events WHERE accepted = 1 AND (startDate > NOW() OR (endDate IS NOT NULL AND endDate > NOW())) ORDER BY startDate ASC;"
 
     // Execute the query
     db.query(q, (err, data) => {
@@ -178,16 +178,22 @@ app.post('/createEvent', (req, res) => {
     })
 })
 
-// Delete a club by clubName
+// Delete a club by clubName and reset members
 app.delete('/clubs/:clubName', (req, res) => {
-    // Cerate the DELETE query
-    const q = "DELETE FROM clubs WHERE clubName = ?"
     const clubName = req.params.clubName
 
-    // Execute the query
-    db.query(q, clubName, (err, data) => {
+    // First, update all members of the club
+    const q1 = "UPDATE person SET role = 'STU', club = NULL WHERE club = ?"
+
+    db.query(q1, [clubName], (err, updateData) => {
         if (err) return res.json(err)
-        return res.json("Club deleted successfully")
+
+        // Then delete the club
+        const q2 = "DELETE FROM clubs WHERE clubName = ?"
+        db.query(q2, [clubName], (err, deleteData) => {
+            if (err) return res.json(err)
+            return res.json("Club deleted and members reset successfully")
+        })
     })
 })
 

@@ -2,7 +2,7 @@
 
 import { React, useEffect, useState } from "react"
 import axios from "axios"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 
 const ClubPage = () => {
     // State to hold clubs and events data
@@ -14,6 +14,9 @@ const ClubPage = () => {
     // Get club name from URL
     const location = useLocation()
     const clubName = location.pathname.split("/")[2]
+
+    // Navigation hook to return to home page after creation
+    const navigate = useNavigate()
 
     // Fetch clubs data from backend
     useEffect(() => {
@@ -130,6 +133,15 @@ const ClubPage = () => {
         }
     }
 
+    const handleDelate = async (clubName) => {
+        try {
+            await axios.delete("http://localhost:3000/clubs/" + clubName)
+            navigate("../../") // Navigate back to club page
+        } catch (err) {
+            console.error(err)
+        }
+    }
+
     // Render club information
     return (
         <div className="club-page">
@@ -193,9 +205,9 @@ const ClubPage = () => {
                                     <td>{p.username}</td>
                                     <td>{p.role}</td>
                                     <td>
-                                        {p.role !== "CL" && (<button className="deletebtn" onClick={() => handleExpell(p.username)}>Expell</button>)}
-                                        {p.role === "CM" && (<button onClick={() => handlePromote(p.username)} style={{margin: "0 0 0 0.5rem"}}>Promote</button>)}
-                                        {p.role === "VP" && (<button onClick={() => handleAccept(p.username)} style={{margin: "0 0 0 0.5rem"}}>Depromote</button>)}
+                                        {p.role !== "CL" && (<button className="deletebtn" onClick={() => handleExpell(p.username)}>✖</button>)}
+                                        {p.role === "CM" && (<button onClick={() => handlePromote(p.username)} style={{margin: "0 0 0 0.5rem"}}>▲</button>)}
+                                        {p.role === "VP" && (<button onClick={() => handleAccept(p.username)} style={{margin: "0 0 0 0.5rem"}}>▼</button>)}
                                     </td>
                                 </tr>
                             ))}
@@ -220,8 +232,8 @@ const ClubPage = () => {
                                 <tr key={p.username}>
                                     <td>{p.username}</td>
                                     <td>
-                                        <button onClick={() => handleAccept(p.username)}>Accept</button>
-                                        <button onClick={() => handleReject(p.username)} style={{margin: "0 0 0 0.5rem"}}>Reject</button>
+                                        <button onClick={() => handleAccept(p.username)}>✓</button>
+                                        <button onClick={() => handleReject(p.username)} style={{margin: "0 0 0 0.5rem"}}>✖</button>
                                     </td>
                                 </tr>
                             ))}
@@ -257,6 +269,10 @@ const ClubPage = () => {
             </aside>
             <div>
                 <button><Link to={"../"}>Back</Link></button>&nbsp;
+                <button className="deletebtn" onClick={() => handleDelate(clubName)}>Delate Club</button>
+            </div>
+            <div>
+                <button><Link to={`/JoinClub/${clubName}`}>Join Club</Link></button>&nbsp;
                 <button className="deletebtn" onClick={() => handleExpell(/*username*/)}>Quit club</button>
             </div>
         </div>

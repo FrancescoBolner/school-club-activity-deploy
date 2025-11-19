@@ -26,8 +26,6 @@ const CreateEvent = () => {
         setEvent((prev) => ({...prev, [e.target.name]: e.target.value}))
     }
 
-    console.log(event)
-
     // Handle form submission to create a new club
     const handleClick = async (e) => {
         e.preventDefault() // Prevent default form submission behavior
