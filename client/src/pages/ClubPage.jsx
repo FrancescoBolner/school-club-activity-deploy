@@ -205,9 +205,9 @@ const ClubPage = () => {
                                     <td>{p.username}</td>
                                     <td>{p.role}</td>
                                     <td>
-                                        {p.role !== "CL" && (<button className="deletebtn" onClick={() => handleExpell(p.username)}>✖</button>)}
-                                        {p.role === "CM" && (<button onClick={() => handlePromote(p.username)} style={{margin: "0 0 0 0.5rem"}}>▲</button>)}
-                                        {p.role === "VP" && (<button onClick={() => handleAccept(p.username)} style={{margin: "0 0 0 0.5rem"}}>▼</button>)}
+                                        {p.role === "CM" && (<button onClick={() => handlePromote(p.username)}>▲</button>)}
+                                        {p.role === "VP" && (<button onClick={() => handleAccept(p.username)}>▼</button>)}
+                                        {p.role !== "CL" && (<button className="deletebtn" onClick={() => handleExpell(p.username)} style={{margin: "0 0 0 0.5rem"}}>X</button>)}
                                     </td>
                                 </tr>
                             ))}
@@ -233,7 +233,7 @@ const ClubPage = () => {
                                     <td>{p.username}</td>
                                     <td>
                                         <button onClick={() => handleAccept(p.username)}>✓</button>
-                                        <button onClick={() => handleReject(p.username)} style={{margin: "0 0 0 0.5rem"}}>✖</button>
+                                        <button onClick={() => handleReject(p.username)} className="deletebtn" style={{margin: "0 0 0 0.5rem"}}>✖</button>
                                     </td>
                                 </tr>
                             ))}

@@ -144,6 +144,7 @@ form button {
   transition: transform var(--transition), box-shadow var(--transition), border var(--transition);
   max-width: var(--card-width);
   margin: 0 auto;
+  width: -webkit-fill-available;
 }
 .card:hover,
 .club.card:hover {
