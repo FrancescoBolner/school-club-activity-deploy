@@ -220,7 +220,12 @@ app.post('/createClub', (req, res) => {
         const q2 = "INSERT INTO clubs (clubName, description, memberCount, memberMax) VALUES (?)"
         db.query(q2, [values], (err, data) => {
             if (err) return res.json(err)
-            return res.status(201).json("Club added successfully")
+
+            const q3 = "UPDATE person SET role = 'CL', club = ? WHERE username = ?"
+            db.query(q3, [req.body.clubName, req.body.username], (err, data) => {
+                if (err) return res.json(err)
+                return res.status(201).json("Club added successfully")
+            })
         })
     })
 })

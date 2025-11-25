@@ -1,6 +1,6 @@
 // Page for creating a new club
 
-import { React, useState } from "react"
+import { React, useState, useEffect } from "react"
 import axios from "axios"
 import { Link, useNavigate, useLocation } from "react-router-dom"
 
@@ -14,9 +14,28 @@ const UpdateClub = () => {
         description: "",
         memberMax: null
     })
+    const [user, setUser] = useState(null)
 
     // Navigation hook to return to home page after creation
     const navigate = useNavigate()
+
+    // Ensure axios sends cookies with requests
+    axios.defaults.withCredentials = true;
+    
+    // Check user session on component mount
+    useEffect(() => {
+        axios.get("http://localhost:3000/session")
+        .then((res) => {
+            if (res.data.valid && res.data.club === clubName && res.data.role === "CL") {
+                setUser(res.data)
+            } else {
+                navigate("/")
+            }
+        })
+        .catch((err) => {
+            console.error(err)
+        })
+    }, [])
 
     // Handle input changes and update state
     const handleChange = (e) => {
@@ -39,8 +58,6 @@ const UpdateClub = () => {
             }
         }
     }
-
-    // ---> UPDATE: change role STU to CL and club NULL to clubName <---
 
     // Render the create club form
     return (
