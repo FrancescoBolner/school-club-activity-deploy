@@ -51,20 +51,32 @@ db.connect(err => {
 
 // Reload session values from DB when the logged-in user is updated
 const refreshSessionForUser = (req, username) => {
-        if (!req.session || req.session.username !== username) return Promise.resolve()
+    if (!req.session || req.session.username !== username) return Promise.resolve()
 
-        return new Promise((resolve, reject) => {
-                const q = 'SELECT username, role, club FROM person WHERE username = ? LIMIT 1'
-                db.query(q, username, (err, data) => {
-                        if (err) return reject(err)
-                        if (data.length > 0) {
-                                req.session.username = data[0].username
-                                req.session.role = data[0].role
-                                req.session.club = data[0].club
-                        }
-                        resolve()
-                })
+    return new Promise((resolve, reject) => {
+        const q = 'SELECT username, role, club FROM person WHERE username = ? LIMIT 1'
+        db.query(q, username, (err, data) => {
+            if (err) return reject(err)
+            if (data.length > 0) {
+                req.session.username = data[0].username
+                req.session.role = data[0].role
+                req.session.club = data[0].club
+            }
+            resolve()
         })
+    })
+}
+
+const updateMemberCount = (clubName, delta) => {
+    if (!clubName || typeof delta !== 'number' || delta === 0) return Promise.resolve()
+
+    return new Promise((resolve, reject) => {
+        const q = 'UPDATE clubs SET memberCount = GREATEST(memberCount + ?, 0) WHERE clubName = ?'
+        db.query(q, [delta, clubName], err => {
+            if (err) return reject(err)
+            resolve()
+        })
+    })
 }
 
 // Get session info
@@ -92,7 +104,7 @@ app.get('/clubs', (req, res) => {
 // Get specific club by clubName
 app.get('/clubs/:clubName', (req, res) => {
     // Cerate the SELECT query
-    const q = "SELECT * FROM clubs WHERE clubName = ?"
+    const q = "SELECT * FROM clubs WHERE clubName = ? LIMIT 1"
     const clubName = req.params.clubName
 
     // Execute the query
@@ -359,6 +371,7 @@ app.put('/expell/:username', (req, res) => {
     db.query(q, username, (err, data) => {
         if (err) return res.json(err)
         refreshSessionForUser(req, username)
+            .then(() => updateMemberCount(req.body.clubName, -1))
             .then(() => res.json("User expelled successfully"))
             .catch(syncErr => res.status(500).json(syncErr))
     })
@@ -373,6 +386,7 @@ app.put('/accept/:username', (req, res) => {
     db.query(q, username, (err, data) => {
         if (err) return res.json(err)
         refreshSessionForUser(req, username)
+            .then(() => updateMemberCount(req.body.clubName, 1))
             .then(() => res.json("User accepted successfully"))
             .catch(syncErr => res.status(500).json(syncErr))
     })
@@ -403,6 +417,20 @@ app.put('/promote/:username', (req, res) => {
         if (err) return res.json(err)
         refreshSessionForUser(req, username)
             .then(() => res.json("User promoted successfully"))
+            .catch(syncErr => res.status(500).json(syncErr))
+    })
+})
+
+app.put('/depromote/:username', (req, res) => {
+    // Cerate the UPDATE query
+    const q = "UPDATE person SET role = 'CM' WHERE username = ?"
+    const username = req.params.username
+
+    // Execute the query
+    db.query(q, username, (err, data) => {
+        if (err) return res.json(err)
+        refreshSessionForUser(req, username)
+            .then(() => res.json("User accepted successfully"))
             .catch(syncErr => res.status(500).json(syncErr))
     })
 })

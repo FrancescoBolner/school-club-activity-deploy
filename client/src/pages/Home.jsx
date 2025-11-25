@@ -79,41 +79,70 @@ const Home = () => {
     // Render clubs and events
     return (
         <div>
-            <div style={{textAlign: "center"}}>
-                <h1>Welcome {user.username}</h1>
-                <button onClick={handleLogout}>Log out</button>
-            </div>
-            <h1>Club List</h1>
-            <div className="clubs">
-                {<BrowseClubs clubs={clubs} />}
-            </div>
-            {!user.club && (
-                <div className="createClub">
-                    <h4>No club interest you?</h4>
-                    <button><Link to={"/CreateClub"}>Create Club</Link></button>
+            <section className="dashboard-header">
+                <div className="user-card">
+                    <p className="eyebrow">Signed in as</p>
+                    <h1>{user.username}</h1>
+                    <p className="user-card__subtitle">
+                        {user.club ? `Active member of ${user.club}` : 'Not enrolled in a club yet'}
+                    </p>
+                    <div className="user-card__actions">
+                        <button onClick={handleLogout}>Log out</button>
+                        <Link className="btn secondary" to={user.club ? `/ClubPage/${user.club}` : '/CreateClub'}>
+                            {user.club ? 'View my club' : 'Create a club'}
+                        </Link>
+                    </div>
                 </div>
-            )}
-            <h1>Incoming Events</h1>
-            <div className="events">
-                {events.map((event) => (
-                    <div className="event" key={event.eventid}>
-                    <div className="event-header">
-                        <h2>{event.title}</h2>
-                        <span className="event-date">
-                            {((s,e)=>!e
-                                ? `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
-                                : s.toDateString() === e.toDateString()
-                                    ? `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})} - ${e.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
-                                    : `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})} - ${e.toLocaleDateString('en-GB')} ${e.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
-                                )(new Date(event.startDate), event.endDate ? new Date(event.endDate) : null
-                            )}
-                        </span>
+                <div className="user-metrics">
+                    <div className="metric">
+                        <span className="metric-label">Club</span>
+                        <span className="metric-value">{user.club}</span>
                     </div>
-                    <p className="event-club">Hold by {event.clubName}</p>
-                    <p className="event-description">{event.description}</p>
+                    <div className="metric">
+                        <span className="metric-label">Role</span>
+                        <span className="metric-value">{user.role}</span>
                     </div>
-                ))}
-            </div>
+                    <div className="metric">
+                        <span className="metric-label">Upcoming events</span>
+                        <span className="metric-value">{events.length}</span>
+                    </div>
+                </div>
+            </section>
+            <section>
+                <h1>Club List</h1>
+                <div className="clubs">
+                    {<BrowseClubs clubs={clubs} />}
+                </div>
+                {!user.club && (
+                    <div className="createClub">
+                        <h4>No club interest you?</h4>
+                        <button><Link to={"/CreateClub"}>Create Club</Link></button>
+                    </div>
+                )}
+            </section>
+            <section>
+                <h1>Incoming Events</h1>
+                <div className="events">
+                    {events.map((event) => (
+                        <div className="event" key={event.eventid}>
+                        <div className="event-header">
+                            <h2>{event.title}</h2>
+                            <span className="event-date">
+                                {((s,e)=>!e
+                                    ? `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
+                                    : s.toDateString() === e.toDateString()
+                                        ? `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})} - ${e.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
+                                        : `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})} - ${e.toLocaleDateString('en-GB')} ${e.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
+                                    )(new Date(event.startDate), event.endDate ? new Date(event.endDate) : null
+                                )}
+                            </span>
+                        </div>
+                        <p className="event-club">Hold by {event.clubName}</p>
+                        <p className="event-description">{event.description}</p>
+                        </div>
+                    ))}
+                </div>
+            </section>
         </div>
     )
 }

@@ -92,7 +92,7 @@ const ClubPage = () => {
 
     const handleAccept = async (username) => {
         try {
-            await axios.put("http://localhost:3000/accept/" + username)
+            await axios.put("http://localhost:3000/accept/" + username, { clubName: clubName })
             window.location.reload()
         } catch (err) {
             console.error(err)
@@ -117,9 +117,18 @@ const ClubPage = () => {
         }
     }
 
+    const handleDepromote = async (username) => {
+        try {
+            await axios.put("http://localhost:3000/depromote/" + username)
+            window.location.reload()
+        } catch (err) {
+            console.error(err)
+        }
+    }
+
     const handleExpell = async (username) => {
         try {
-            await axios.put("http://localhost:3000/expell/" + username)
+            await axios.put("http://localhost:3000/expell/" + username, { clubName: clubName })
             window.location.reload()
         } catch (err) {
             console.error(err)
@@ -243,7 +252,7 @@ const ClubPage = () => {
                                     <td>{p.role}</td>
                                     <td>
                                         {user && user.club === club.clubName && user.role === "CL" && p.role === "CM" && (<button onClick={() => handlePromote(p.username)}>▲</button>)}
-                                        {user && user.club === club.clubName && user.role === "CL" && p.role === "VP" && (<button onClick={() => handleAccept(p.username)}>▼</button>)}
+                                        {user && user.club === club.clubName && user.role === "CL" && p.role === "VP" && (<button onClick={() => handleDepromote(p.username)}>▼</button>)}
                                         {user && user.club === club.clubName && (user.role === "CL" || user.role === "VP") && p.role !== "CL" && (<button className="deletebtn" onClick={() => handleExpell(p.username)} style={{margin: "0 0 0 0.5rem"}}>X</button>)}
                                     </td>
                                 </tr>
