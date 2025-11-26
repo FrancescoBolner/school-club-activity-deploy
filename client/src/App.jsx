@@ -74,6 +74,11 @@ function App() {
               {unread > 0 && <span className="pill">{unread}</span>}
             </Link>
             <Link to="/CreateClub">Create Club</Link>
+            {session?.club && (
+              <Link className="chip-link" to={`/ClubPage/${session.club}`}>
+                My Club
+              </Link>
+            )}
           </nav>
           <div className="nav-actions">
             {session ? (

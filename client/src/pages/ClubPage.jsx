@@ -31,6 +31,8 @@ const ClubPage = () => {
     const session = getSession()
     const isAdmin = useMemo(() => session && ['CL', 'VP'].includes(session.role) && session.club === clubName, [session, clubName])
     const isLeader = useMemo(() => session && session.role === 'CL' && session.club === clubName, [session, clubName])
+    const isMember = useMemo(() => session && session.club === clubName && ['CL','VP','CM'].includes(session.role), [session, clubName])
+    const isPending = useMemo(() => session && session.club === clubName && session.role === 'STU', [session, clubName])
 
     // Navigation hook to return to home page after creation
     const navigate = useNavigate()
@@ -231,8 +233,22 @@ const ClubPage = () => {
                             <p className="club-description" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(club.description) }}></p>
                             <div className="club-actions">
                                 {isAdmin && <button><Link to={"/UpdateClub/" + clubName}>Update Info</Link></button>}
-                                <button className="ghost"><Link to={`/JoinClub/${clubName}`}>Join / Request</Link></button>
-                                <button className="ghost"><Link to={`/Comment/${clubName}`}>Comment</Link></button>
+                                {!isMember && !isPending && (
+                                    <button className="btn-primary" onClick={() => {
+                                        if (!session) return navigate("/LogIn")
+                                        navigate(`/JoinClub/${clubName}`)
+                                    }}>Join / Request</button>
+                                )}
+                                {isPending && (
+                                    <button className="btn-muted" disabled>Request pending</button>
+                                )}
+                                {isMember && (
+                                    <button className="btn-muted" disabled>Already a member</button>
+                                )}
+                                <button className="btn-ghost" onClick={() => {
+                                    if (!session) return navigate("/LogIn")
+                                    navigate(`/Comment/${clubName}`)
+                                }}>Comment</button>
                             </div>
                         </div>
                         <div className="club-stats">
@@ -385,7 +401,7 @@ const ClubPage = () => {
                                                 <button onClick={() => handleReject(p.username)} className="deletebtn" style={{margin: "0 0 0 0.5rem"}}>✖</button>
                                             </>
                                         ) : (
-                                            <span style={{ opacity: 0.6 }}>Pending</span>
+                                            <span className="pill soft">Pending</span>
                                         )}
                                     </td>
                                 </tr>
@@ -471,8 +487,9 @@ const ClubPage = () => {
                 {isLeader && <button className="deletebtn" onClick={() => handleDeleteClub(clubName)}>Delete Club</button>}
             </div>
             <div>
-                <button><Link to={`/JoinClub/${clubName}`}>Join Club</Link></button>&nbsp;
-                {session?.club === clubName && <button className="deletebtn" onClick={() => handleExpell(session.username)}>Quit club</button>}
+                {!isMember && !isPending && <button><Link to={`/JoinClub/${clubName}`}>Join Club</Link></button>}&nbsp;
+                {isPending && <button className="btn-muted" disabled>Request pending</button>}
+                                {isMember && <button className="deletebtn" onClick={() => handleExpell(session.username)}>Quit club</button>}
             </div>
         </div>
     )

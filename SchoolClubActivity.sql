@@ -332,7 +332,15 @@ INSERT INTO notifications (`username`, `clubName`, `type`, `message`, `link`, `i
 ('Marta', 'Ski', 'membership', 'You have been promoted to VP in Ski', '/ClubPage/Ski', 1, '2025-03-07 09:00:00'),
 ('Ayoub', 'Basketball', 'membership', 'Your 3v3 tournament recap is ready', '/ClubPage/Basketball', 0, '2025-06-17 11:00:00'),
 ('Sofia', 'Cooking', 'event', 'New pasta workshop added this week', '/ClubPage/Cooking', 0, '2025-05-18 09:30:00'),
-('Bella', 'Gaming', 'event', 'LAN party schedule has changed', '/ClubPage/Gaming', 0, '2024-11-27 12:00:00');
+('Bella', 'Gaming', 'event', 'LAN party schedule has changed', '/ClubPage/Gaming', 0, '2024-11-27 12:00:00'),
+('Francesco', 'Ski', 'membership', 'Reminder: Spring Backcountry Trip roster closes tomorrow.', '/ClubPage/Ski', 0, '2025-02-25 08:00:00'),
+('Samuele', 'Ski', 'membership', 'Your join request to Ski is pending. Check back soon.', '/ClubPage/Ski', 0, '2025-02-20 10:00:00'),
+('Ari', 'Ski', 'event', 'Après-Ski Night details updated.', '/ClubPage/Ski', 1, '2025-02-15 18:00:00'),
+('Nicolas', 'Debate', 'event', 'You are on the roster for Parliamentary Scrimmage.', '/ClubPage/Debate', 0, '2025-03-10 13:00:00'),
+('Greta', 'Environmental', 'event', 'Campus Cleanup: meet at the quad 09:00.', '/ClubPage/Environmental', 0, '2025-04-18 07:30:00'),
+('Ethan', 'Coding', 'event', 'Hack Night prereqs: bring laptop, Node installed.', '/ClubPage/Coding', 0, '2025-03-10 12:00:00'),
+('Layla', 'Dance', 'event', 'Salsa Social: bring a guest, free entry.', '/ClubPage/Dance', 0, '2025-03-21 08:00:00'),
+('Clara', 'Book', 'event', 'New picks are live for the next meetup.', '/ClubPage/Book', 0, '2025-01-20 09:00:00');
 
 -- ===== Update clubs.memberCount to match actual inserted people (counts based on above inserts) =====
 UPDATE clubs SET memberCount = (
