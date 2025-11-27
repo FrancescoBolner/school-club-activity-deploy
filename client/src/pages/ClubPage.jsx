@@ -25,6 +25,7 @@ const ClubPage = () => {
     const [membersError, setMembersError] = useState("")
     const [commentsError, setCommentsError] = useState("")
     const [eventFilters, setEventFilters] = useState({ search: "", orderBy: "startDate", order: "asc", page: 1, limit: 5 })
+    const [eventFilterOpen, setEventFilterOpen] = useState(false)
     const [commentFilters, setCommentFilters] = useState({ search: "", orderBy: "date", order: "desc", page: 1, limit: 10 })
     const [eventMeta, setEventMeta] = useState({ page: 1, pages: 1, total: 0 })
     const [commentMeta, setCommentMeta] = useState({ page: 1, pages: 1, total: 0 })
@@ -277,6 +278,13 @@ const ClubPage = () => {
                 <div className="card">{error || 'Club not found.'}</div>
             ) : (
                 <div className="club-header" key={club.clubName}>
+                    <div 
+                        className="club-page-banner" 
+                        style={club.bannerImage 
+                            ? { backgroundImage: `url(${club.bannerImage})` }
+                            : { backgroundColor: club.bannerColor || '#38bdf8' }
+                        }
+                    ></div>
                     <div className="club-hero">
                         <div>
                             <p className="eyebrow">Club</p>
@@ -340,31 +348,46 @@ const ClubPage = () => {
                 </div>
             )}
             <div className="events">
-                <div className="section-header">
-                    <h3 style={{margin: "0 0 0.5rem 0"}}>Events:</h3>
-                    <div className="inline-filters">
-                        <input
-                            type="text"
-                            placeholder="Search title/description"
-                            value={eventFilters.search}
-                            onChange={(e) => updateEventFilter("search", e.target.value)}
-                        />
-                        <select value={eventFilters.orderBy} onChange={(e) => updateEventFilter("orderBy", e.target.value)}>
-                            <option value="startDate">Start date</option>
-                            <option value="endDate">End date</option>
-                            <option value="title">Title</option>
-                        </select>
-                        <select value={eventFilters.order} onChange={(e) => updateEventFilter("order", e.target.value)}>
-                            <option value="asc">Asc</option>
-                            <option value="desc">Desc</option>
-                        </select>
-                        <select value={eventFilters.limit} onChange={(e) => updateEventFilter("limit", Number(e.target.value))}>
-                            <option value={3}>3</option>
-                            <option value={5}>5</option>
-                            <option value={10}>10</option>
-                        </select>
-                    </div>
+                <h3 style={{margin: "0 0 0.5rem 0"}}>Events:</h3>
+                {/* Top bar */}
+                <div className="top-bar">
+                    <input
+                        type="text"
+                        placeholder="Search events..."
+                        value={eventFilters.search}
+                        onChange={(e) => updateEventFilter("search", e.target.value)}
+                    />
+                    <button onClick={() => setEventFilterOpen(!eventFilterOpen)}>≡</button>
                 </div>
+
+                {/* Filter panel */}
+                {eventFilterOpen && (
+                    <div className="filter-panel">
+                        <label>
+                            Order by:
+                            <select value={eventFilters.orderBy} onChange={(e) => updateEventFilter("orderBy", e.target.value)}>
+                                <option value="startDate">Start date</option>
+                                <option value="endDate">End date</option>
+                                <option value="title">Title</option>
+                            </select>
+                        </label>
+                        <label>
+                            Sort:
+                            <select value={eventFilters.order} onChange={(e) => updateEventFilter("order", e.target.value)}>
+                                <option value="asc">Asc</option>
+                                <option value="desc">Desc</option>
+                            </select>
+                        </label>
+                        <label>
+                            Per page:
+                            <select value={eventFilters.limit} onChange={(e) => updateEventFilter("limit", Number(e.target.value))}>
+                                <option value={3}>3</option>
+                                <option value={5}>5</option>
+                                <option value={10}>10</option>
+                            </select>
+                        </label>
+                    </div>
+                )}
                 {eventsError && <p className="alert error" style={{ marginTop: 0 }}>{eventsError}</p>}
                 {loadingEvents ? (
                     <p style={{ textAlign: "center", opacity: 0.6 }}>Loading events...</p>
@@ -452,8 +475,8 @@ const ClubPage = () => {
                         <tbody>
                             {person.filter((p) => p.role !== "STU").map((p) => (
                                 <tr key={p.username}>
-                                    <td>{p.username}</td>
-                                    <td>{p.role}</td>
+                                    <td style={{ fontWeight: p.username === session?.username ? 700 : 400 }}>{p.username}</td>
+                                    <td style={{ fontWeight: p.username === session?.username ? 700 : 400 }}>{p.role}</td>
                                     <td>
                                         {isLeader && (
                                             <>
@@ -461,7 +484,7 @@ const ClubPage = () => {
                                                 {p.role === "VP" && (<button onClick={() => handleDemote(p.username)} title="Demote to member">▼</button>)}
                                             </>
                                         )}
-                                        {isAdmin && p.role !== "CL" && (
+                                        {isAdmin && p.role !== "CL" && p.username !== session?.username && (
                                             <button className="deletebtn" onClick={() => handleExpell(p.username)} style={{margin: "0 0 0 0.5rem"}}>X</button>
                                         )}
                                     </td>
@@ -570,7 +593,7 @@ const ClubPage = () => {
                     ) : comments.map((c) => (
                         <div className="comment" key={c.commentid}>
                             <div className="comment-header">
-                                <div style={{fontWeight: 700, color: "#0f172a"}}>{c.username}</div>
+                                <div style={{fontWeight: c.username === session?.username ? 800 : 700, color: "#0f172a"}}>{c.username}</div>
                                 <div className="comment-meta">{new Date(c.date).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
                             </div>
                             <div className="comment-body">

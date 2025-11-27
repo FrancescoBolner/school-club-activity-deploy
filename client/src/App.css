@@ -50,6 +50,9 @@ body {
 }
 
 .top-nav {
+  position: sticky;
+  top: 1rem;
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -57,6 +60,7 @@ body {
   padding: 1rem 1.25rem;
   margin-bottom: 1.5rem;
   background: linear-gradient(120deg, rgba(15,18,42,0.08), rgba(56,189,248,0.1));
+  backdrop-filter: blur(18px) saturate(1.05);
   border-radius: var(--radius-md);
   border: 1px solid rgba(15, 23, 42, 0.05);
   box-shadow: var(--shadow-sm);
@@ -341,8 +345,25 @@ form button {
 .club {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0;
   align-items: flex-start;
+  overflow: hidden;
+}
+.club-banner {
+  width: 130%;
+  height: 120px;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  margin: -1.75rem -1.75rem 0 -1.75rem;
+}
+.club-content {
+  padding: 1rem 0 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
 }
 .club h2 {
   margin: 0;
@@ -572,17 +593,27 @@ form button {
   gap: 1.25rem;
 }
 .club-main > .club-header {
-  padding: 1.8rem;
+  padding: 0;
   border-radius: var(--radius-lg);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: var(--shadow-sm);
   border: 1px solid rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+.club-page-banner {
+  width: 100%;
+  height: 180px;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  margin-bottom: 1.5rem;
 }
 .club-hero {
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 1.25rem;
   align-items: center;
+  padding: 0 1.8rem 1.8rem 1.8rem;
 }
 @media (max-width: 860px) {
   .club-hero {
@@ -692,18 +723,18 @@ form button {
   flex-direction: column;
   gap: 0.85rem;
   margin-top: 1.1rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: var(--radius-md);
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+.comments-list::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 .comment {
   padding: 1rem 1.15rem;
-  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--transition), box-shadow var(--transition);
-}
-.comment:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
+  border-bottom: 2px solid rgba(148, 163, 184, 0.16);
 }
 .comment-header {
   display: flex;
@@ -813,8 +844,9 @@ form button {
 }
 
 .filter-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 1rem;
   padding: 1.2rem;
   border-radius: var(--radius-lg);

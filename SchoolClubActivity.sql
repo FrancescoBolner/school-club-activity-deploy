@@ -11,6 +11,8 @@ CREATE TABLE `clubs` (
     `description` text NOT NULL COMMENT 'Description of the club activities and schedules, can contain HTML formatting',
     `memberCount` int NOT NULL COMMENT 'Current number of members in the club',
     `memberMax` int NOT NULL COMMENT 'Maximum allowed members in the club',
+    `bannerImage` text DEFAULT NULL COMMENT 'URL of the banner image for the club',
+    `bannerColor` varchar(7) DEFAULT '#38bdf8' COMMENT 'Hex color code for banner background when no image is provided',
     PRIMARY KEY (`clubName`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
@@ -70,22 +72,22 @@ CREATE TABLE `notifications` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 -- ===== CLUBS =====
-INSERT INTO clubs (`clubName`, `description`, `memberCount`, `memberMax`) VALUES
-('Ski', '<p>The Ski Club meets every winter. Equipment rentals available.<br><b>Weekly schedule:</b><ul><li>Mon: dryland training 18:00-19:30</li><li>Fri: slope trips (depart 06:00)</li></ul><p style="color:blue">Après-ski socials every Saturday night.</p>', 18, 40),
-('Basketball', '<p>Open hoops and competitive teams. Practices: Tue/Thu 20:00-22:00 at Gym A.<br><small>Junior sessions on Sat 10:00-12:00</small></p>', 22, 50),
-('Robotics', '<p>We build robots and compete in regional challenges. Workshop: Wed 19:00-22:00 (Lab 3)</p>', 15, 40),
-('Book', '<p>Monthly book selections and two discussion groups. Next meeting: last Tuesday of month, 19:30.</p>', 12, 30),
-('Photography', '<p>Photo walks, editing workshops, and exhibitions. Gear share available on demand.</p>', 10, 25),
-('Cooking', '<p>Hands-on cooking sessions and themed dinners. Allergy-friendly options available. <br/>Every 2nd Sunday: community dinner.</p>', 14, 30),
-('Music', '<p>Chamber groups and open jam nights. Rehearsals Wed 18:00-20:30.</p>', 16, 40),
-('Chess', '<p>Casual play and weekly rated matches. Coaching for beginners.</p>', 9, 20),
-('Hiking', '<p>Day hikes and overnight treks. Safety briefing mandatory for multi-day trips.</p>', 13, 35),
-('Gaming', '<p>Board games, tabletop RPGs and esports viewing parties. Newcomers welcome.</p>', 20, 60),
-('Debate', '<p>British parliamentary and public speaking practice. Weekly scrimmages on Thu 18:30.</p>', 11, 30),
-('Drama', '<p>Scene studies, improv, and semester productions. Rehearsals Mon/Wed 19:00.</p>', 14, 35),
-('Environmental', '<p>Campus sustainability projects, cleanups, and green tech talks.</p>', 10, 40),
-('Coding', '<p>Weekly coding dojos, hack nights, and interview prep. All levels welcome.</p>', 18, 50),
-('Dance', '<p>Contemporary, hip-hop, and salsa sessions. Open classes Tue/Fri evenings.</p>', 15, 40);
+INSERT INTO clubs (`clubName`, `description`, `memberCount`, `memberMax`, `bannerImage`, `bannerColor`) VALUES
+('Ski', '<p>The Ski Club meets every winter. Equipment rentals available.<br><b>Weekly schedule:</b><ul><li>Mon: dryland training 18:00-19:30</li><li>Fri: slope trips (depart 06:00)</li></ul><p style="color:blue">Après-ski socials every Saturday night.</p>', 18, 40, 'https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=800', NULL),
+('Basketball', '<p>Open hoops and competitive teams. Practices: Tue/Thu 20:00-22:00 at Gym A.<br><small>Junior sessions on Sat 10:00-12:00</small></p>', 22, 50, 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800', NULL),
+('Robotics', '<p>We build robots and compete in regional challenges. Workshop: Wed 19:00-22:00 (Lab 3)</p>', 15, 40, NULL, '#8b5cf6'),
+('Book', '<p>Monthly book selections and two discussion groups. Next meeting: last Tuesday of month, 19:30.</p>', 12, 30, NULL, '#f59e0b'),
+('Photography', '<p>Photo walks, editing workshops, and exhibitions. Gear share available on demand.</p>', 10, 25, 'https://images.unsplash.com/photo-1452587925148-ce544e77e70d?w=800', NULL),
+('Cooking', '<p>Hands-on cooking sessions and themed dinners. Allergy-friendly options available. <br/>Every 2nd Sunday: community dinner.</p>', 14, 30, NULL, '#ef4444'),
+('Music', '<p>Chamber groups and open jam nights. Rehearsals Wed 18:00-20:30.</p>', 16, 40, NULL, '#ec4899'),
+('Chess', '<p>Casual play and weekly rated matches. Coaching for beginners.</p>', 9, 20, NULL, '#6366f1'),
+('Hiking', '<p>Day hikes and overnight treks. Safety briefing mandatory for multi-day trips.</p>', 13, 35, 'https://images.unsplash.com/photo-1551632811-561732d1e306?w=800', NULL),
+('Gaming', '<p>Board games, tabletop RPGs and esports viewing parties. Newcomers welcome.</p>', 20, 60, NULL, '#8b5cf6'),
+('Debate', '<p>British parliamentary and public speaking practice. Weekly scrimmages on Thu 18:30.</p>', 11, 30, NULL, '#0ea5e9'),
+('Drama', '<p>Scene studies, improv, and semester productions. Rehearsals Mon/Wed 19:00.</p>', 14, 35, NULL, '#f43f5e'),
+('Environmental', '<p>Campus sustainability projects, cleanups, and green tech talks.</p>', 10, 40, NULL, '#10b981'),
+('Coding', '<p>Weekly coding dojos, hack nights, and interview prep. All levels welcome.</p>', 18, 50, NULL, '#3b82f6'),
+('Dance', '<p>Contemporary, hip-hop, and salsa sessions. Open classes Tue/Fri evenings.</p>', 15, 40, 'https://images.unsplash.com/photo-1504609813442-a8924e83f76e?w=800', NULL);
 
 -- ===== PERSONS =====
 INSERT INTO person (`username`, `password`, `role`, `club`, `sessionId`) VALUES

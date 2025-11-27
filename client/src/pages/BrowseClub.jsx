@@ -137,25 +137,31 @@ export default function BrowseClubs() {
         {clubs.map((club) => {
           const isMyClub = session?.club === club.clubName;
           const alreadyInClub = session?.club && !isMyClub; // Has club (including pending)
+          const bannerStyle = club.bannerImage 
+            ? { backgroundImage: `url(${club.bannerImage})` }
+            : { backgroundColor: club.bannerColor || '#38bdf8' };
           return (
             <div className="club card" key={club.clubName}>
-              <h2>{club.clubName}</h2>
-              <p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(club.description) }}></p>
-              <p>Members: {club.memberCount} / {club.memberMax}</p>
-              <ProgressBar percentage={(club.memberCount / club.memberMax) * 100} />
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <Link className="btn" to={`/ClubPage/${club.clubName}`}>View Club</Link>
-                {!isMyClub && !alreadyInClub && club.memberCount < club.memberMax && (
-                  <button className="btn" onClick={async () => {
-                    try {
-                      await api.put(`/joinClubs/${club.clubName}`);
-                      alert('Join request submitted! Please wait for approval.');
-                      window.location.reload();
-                    } catch (err) {
-                      alert(err.response?.data?.message || 'Failed to join club');
-                    }
-                  }}>Join</button>
-                )}
+              <div className="club-banner" style={bannerStyle}></div>
+              <div className="club-content">
+                <h2>{club.clubName}</h2>
+                <p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(club.description) }}></p>
+                <p>Members: {club.memberCount} / {club.memberMax}</p>
+                <ProgressBar percentage={(club.memberCount / club.memberMax) * 100} />
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <Link className="btn" to={`/ClubPage/${club.clubName}`}>View Club</Link>
+                  {!isMyClub && !alreadyInClub && club.memberCount < club.memberMax && (
+                    <button className="btn" onClick={async () => {
+                      try {
+                        await api.put(`/joinClubs/${club.clubName}`);
+                        alert('Join request submitted! Please wait for approval.');
+                        window.location.reload();
+                      } catch (err) {
+                        alert(err.response?.data?.message || 'Failed to join club');
+                      }
+                    }}>Join</button>
+                  )}
+                </div>
               </div>
             </div>
           );

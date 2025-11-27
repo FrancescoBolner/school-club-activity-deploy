@@ -15,7 +15,9 @@ const UpdateClub = () => {
     const [clubs, setClubs] = useState({
         clubName: clubName,
         description: "",
-        memberMax: null
+        memberMax: null,
+        bannerImage: "",
+        bannerColor: "#38bdf8"
     })
     const [canEdit, setCanEdit] = useState(true)
 
@@ -66,6 +68,11 @@ const UpdateClub = () => {
                 <form>
                     <textarea type="text" placeholder="Description" onChange={handleChange} name="description" required/><br/>
                     <input type="number" placeholder="Max Members" onChange={handleChange} name="memberMax" required/><br/>
+                    <input type="url" placeholder="Banner Image URL (leave empty to use color)" onChange={handleChange} name="bannerImage"/><br/>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.85rem" }}>
+                        Banner Color:
+                        <input type="color" onChange={handleChange} name="bannerColor" value={clubs.bannerColor} style={{ width: "60px", height: "40px", cursor: "pointer" }}/>
+                    </label>
                     <button type="submit" onClick={handleClick}>Update</button>
                 </form>
             ) : (

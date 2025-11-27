@@ -12,7 +12,9 @@ const CreateClub = () => {
         clubName: "",
         description: "",
         memberCount: 0,
-        memberMax: null
+        memberMax: null,
+        bannerImage: "",
+        bannerColor: "#38bdf8"
     })
 
     // Navigation hook to return to home page after creation
@@ -67,6 +69,11 @@ const CreateClub = () => {
                     <input type="text" placeholder="Club Name" onChange={handleChange} name="clubName" required/><br/>
                     <textarea type="text" placeholder="Description" onChange={handleChange} name="description" required/><br/>
                     <input type="number" placeholder="Max Members" onChange={handleChange} name="memberMax" required/><br/>
+                    <input type="url" placeholder="Banner Image URL (optional)" onChange={handleChange} name="bannerImage"/><br/>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.85rem" }}>
+                        Banner Color:
+                        <input type="color" onChange={handleChange} name="bannerColor" value={clubs.bannerColor} style={{ width: "60px", height: "40px", cursor: "pointer" }}/>
+                    </label>
                     <button type="submit" onClick={handleClick}>Create</button>
                 </form>
             )}

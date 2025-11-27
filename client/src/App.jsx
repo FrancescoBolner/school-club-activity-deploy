@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 
 import './App.css';
 import Home from './pages/Home.jsx';
@@ -86,6 +86,23 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
+        <AppContent 
+          session={session} 
+          unread={unread} 
+          handleLogout={handleLogout}
+        />
+      </BrowserRouter>
+    </div>
+  )
+}
+
+function AppContent({ session, unread, handleLogout }) {
+  const location = useLocation()
+  const isLoginPage = location.pathname === '/LogIn'
+
+  return (
+    <>
+      {!isLoginPage && (
         <header className="top-nav">
           <div className="brand">School Club Activity</div>
           <nav>
@@ -113,8 +130,9 @@ function App() {
             )}
           </div>
         </header>
-        <Routes>
-          <Route path="/LogIn" element={<LogIn/>} />
+      )}
+      <Routes>
+        <Route path="/LogIn" element={<LogIn/>} />
           <Route path="/" element={<ProtectedRoute><Home/></ProtectedRoute>} />
           <Route path="/CreateClub" element={<ProtectedRoute><CreateClub/></ProtectedRoute>} />
           <Route path="/ClubPage/:clubName" element={<ProtectedRoute><ClubPage/></ProtectedRoute>} />
@@ -122,9 +140,8 @@ function App() {
           <Route path="/CreateEvent/:clubName" element={<ProtectedRoute><CreateEvent/></ProtectedRoute>} />
           <Route path="/UpdateClub/:clubName" element={<ProtectedRoute><UpdateClub/></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><Notifications/></ProtectedRoute>} />
-        </Routes>
-      </BrowserRouter>
-    </div>
+      </Routes>
+    </>
   )
 }
 
