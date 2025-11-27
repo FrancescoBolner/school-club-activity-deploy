@@ -43,25 +43,6 @@ const LogIn = () => {
         }
     }
 
-    // Temporary endpoint to create accounts for debugging purposes
-    // UPDATE: DELETE
-    const handleCreate = async (e) => {
-        e.preventDefault()
-        try {
-            await axios.post("http://localhost:3000/createAccount", credential)
-            alert("Account created. You can now log in.")
-        } catch (err) {
-            if (err.response && err.response.status === 409) {
-                alert("Username already exists")
-            } else if (err.response && err.response.status === 400) {
-                alert("Username and password are required")
-            } else {
-                console.error(err)
-                alert("Unable to create account")
-            }
-        }
-    }
-
     // Check user session on component mount
     useEffect(() => {
         axios.get("http://localhost:3000/session")
@@ -81,7 +62,6 @@ const LogIn = () => {
                 <input type="text" placeholder="username" onChange={handleChange} name="username" required/><br/>
                 <input type="password" placeholder="password" onChange={handleChange} name="password" required/><br/>
                 <button type="submit" onClick={handleClick}>Login</button>
-                <button type="submit" onClick={handleCreate}>Create</button>
             </form>
         </div>
     )

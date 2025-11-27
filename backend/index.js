@@ -229,36 +229,6 @@ app.post('/login', (req, res) => {
     })
 })
 
-// Temporary endpoint to create accounts for debugging purposes
-// UPDATE: DELETE
-app.post('/createAccount', async (req, res) => {
-    const { username, password } = req.body
-
-    if (!username || !password) {
-        return res.status(400).json({ message: 'Username and password are required' })
-    }
-
-    const checkQuery = 'SELECT username FROM person WHERE username = ? LIMIT 1'
-
-    db.query(checkQuery, [username], async (err, data) => {
-        if (err) return res.status(500).json(err)
-        if (data.length > 0) return res.status(409).json({ message: 'User already exists' })
-
-        let hashedPassword
-        try {
-            hashedPassword = await hashPassword(password)
-        } catch (hashErr) {
-            return res.status(500).json(hashErr)
-        }
-
-        const insertQuery = 'INSERT INTO person (username, password, role, club) VALUES (?, ?, \'STU\', NULL)'
-        db.query(insertQuery, [username, hashedPassword], err => {
-            if (err) return res.status(500).json(err)
-            return res.status(201).json({ created: true })
-        })
-    })
-})
-
 // Destroy current session
 app.post('/logout', (req, res) => {
     req.session.destroy(err => {
@@ -344,7 +314,7 @@ app.delete('/clubs/:clubName', (req, res) => {
     // First, update all members of the club
     const q1 = "UPDATE person SET role = 'STU', club = NULL WHERE club = ?"
 
-    db.query(q1, [clubName], (err, updateData) => {
+    db.query(q1, [clubName], (err, updateData) => { // -----> UPDATE: does not set club to NULL and role to STU
         if (err) return res.status(500).json(err)
 
         // Then delete the club
