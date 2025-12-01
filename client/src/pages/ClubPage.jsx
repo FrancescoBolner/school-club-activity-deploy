@@ -536,7 +536,7 @@ const ClubPage = () => {
                             placeholder="Write your comment..." 
                             value={newComment.comment}
                             onChange={(e) => setNewComment(prev => ({ ...prev, comment: e.target.value }))}
-                            style={{ width: "100%", minHeight: "80px", padding: "0.5rem", borderRadius: "4px", border: "1px solid #cbd5e1", marginBottom: "0.5rem" }}
+                            style={{ width: "100%", maxWidth: "100%", minHeight: "80px", padding: "0.5rem", borderRadius: "4px", border: "1px solid #cbd5e1", marginBottom: "0.5rem" }}
                             required
                         />
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -563,13 +563,13 @@ const ClubPage = () => {
                 )}
 
                 <div className="section-header">
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "100%" }}>
                         <input
                             type="text"
                             placeholder="Search comments/user"
                             value={commentFilters.search}
                             onChange={(e) => updateCommentFilter("search", e.target.value)}
-                            style={{ width: "100%" }}
+                            style={{ maxWidth: "100%" }}
                         />
                         <div style={{ display: "flex", gap: "0.5rem" }}>
                             <select value={commentFilters.orderBy} onChange={(e) => updateCommentFilter("orderBy", e.target.value)} style={{ flex: 1 }}>

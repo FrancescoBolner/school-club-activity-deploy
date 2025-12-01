@@ -238,7 +238,7 @@ input,
 select,
 textarea {
   width: 100%;
-  max-width: 320px;
+  max-width: 375px;
   padding: 0.65rem 1rem;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(99, 102, 241, 0.18);
@@ -602,7 +602,7 @@ form button {
 }
 .club-page-banner {
   width: 100%;
-  height: 180px;
+  height: 200px;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -834,6 +834,7 @@ form button {
   gap: 1rem;
   margin-bottom: 1.25rem;
   justify-content: center;
+  width: 100%; 
 }
 
 .top-bar button {
@@ -944,6 +945,7 @@ form button {
   display: flex;
   flex-direction: column;
   align-items: center;
+  width: 100%;
 }
 
 .CreateClub input, .logIn input{
