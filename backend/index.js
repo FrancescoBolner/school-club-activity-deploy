@@ -82,11 +82,11 @@ const recalcMemberCount = async clubName => {
   )
 }
 
-const createNotification = async ({ username, clubName, type = 'info', message, link = null }) => {
+const createNotification = async ({ username, senderUsername = null, clubName, type = 'info', message, link = null }) => {
   if (!username || !message) return
   await dbp.query(
-    'INSERT INTO notifications (username, clubName, type, message, link) VALUES (?, ?, ?, ?, ?)',
-    [username, clubName || null, type, message, link]
+    'INSERT INTO notifications (username, senderUsername, clubName, type, message, link) VALUES (?, ?, ?, ?, ?, ?)',
+    [username, senderUsername, clubName || null, type, message, link]
   )
 }
 
@@ -108,7 +108,7 @@ const buildPagination = (query, allowedOrder, defaultOrder) => {
 // Middleware
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 400,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false
 })
@@ -400,6 +400,22 @@ app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch
       'INSERT INTO events (title, description, startDate, endDate, clubName) VALUES (?, ?, ?, ?, ?)',
       [title, description, startDate, endDate === '' ? null : endDate, clubName]
     )
+    
+    // Notify all club members about the new event
+    const [members] = await dbp.query(
+      "SELECT username FROM person WHERE club = ? AND role = 'CL'",
+      [clubName]
+    )
+    for (const member of members) {
+      await createNotification({
+        username: member.username,
+        clubName: clubName,
+        type: 'membership',
+        message: `New event "${title}" has been created for ${clubName}`,
+        link: `/ClubPage/${clubName}`
+      })
+    }
+    
     return res.json({ message: 'Event added successfully' })
   } catch (err) {
     console.error('Create event failed', err)
@@ -461,10 +477,30 @@ app.delete('/event/:eventid', requireAuth, requireRoles('CL', 'VP'), async (req,
 app.put('/event/:eventid', requireAuth, requireRoles('CL'), async (req, res) => {
   const eventId = req.params.eventid
   try {
-    const [rows] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventId])
+    const [rows] = await dbp.query('SELECT clubName, title FROM events WHERE eventid = ?', [eventId])
     if (rows.length === 0) return res.status(404).json({ message: 'Event not found' })
     if (req.user.club && req.user.club !== rows[0].clubName) return forbidden(res)
+    
+    const clubName = rows[0].clubName
+    const eventTitle = rows[0].title
+    
     await dbp.query("UPDATE events SET accepted = 1 WHERE eventid = ?", [eventId])
+    
+    // Notify all club members about the accepted event
+    const [members] = await dbp.query(
+      "SELECT username FROM person WHERE club = ? AND role IN ('CL', 'VP', 'CM')",
+      [clubName]
+    )
+    for (const member of members) {
+      await createNotification({
+        username: member.username,
+        clubName: clubName,
+        type: 'membership',
+        message: `Event "${eventTitle}" has been created for ${clubName}`,
+        link: `/ClubPage/${clubName}`
+      })
+    }
+    
     return res.json({ message: "Event accepted successfully" })
   } catch (err) {
     console.error('Accept event failed', err)
@@ -665,6 +701,70 @@ app.post('/notifications', requireAuth, requireRoles('CL', 'VP'), async (req, re
   } catch (err) {
     console.error('Create notification failed', err)
     return res.status(500).json({ message: 'Failed to create notification' })
+  }
+})
+
+app.post('/sendEmail', requireAuth, async (req, res) => {
+  const { recipient, message, sendToAllClub } = req.body
+  if (!message) return res.status(400).json({ message: 'Message required' })
+  
+  try {
+    // Check if user is CL/VP for sending to all club members
+    if (sendToAllClub) {
+      if (!['CL', 'VP'].includes(req.user.role) || !req.user.club) {
+        return res.status(403).json({ message: 'Only Club Leaders and Vice Presidents can send to all members' })
+      }
+      // Get all club members
+      const [members] = await dbp.query(
+        "SELECT username FROM person WHERE club = ? AND role IN ('CL', 'VP', 'CM')",
+        [req.user.club]
+      )
+      // Send to all members
+      for (const member of members) {
+        await createNotification({
+          username: member.username,
+          senderUsername: req.user.username,
+          clubName: req.user.club,
+          type: 'email',
+          message: message,
+          link: null
+        })
+      }
+      return res.status(201).json({ message: `Email sent to ${members.length} club members` })
+    } else {
+      // Send to individual
+      if (!recipient) return res.status(400).json({ message: 'Recipient required' })
+      // Check if recipient exists
+      const [users] = await dbp.query('SELECT username FROM person WHERE username = ?', [recipient])
+      if (users.length === 0) return res.status(404).json({ message: 'Recipient not found' })
+      
+      await createNotification({
+        username: recipient,
+        senderUsername: req.user.username,
+        clubName: req.user.club,
+        type: 'email',
+        message: message,
+        link: null
+      })
+      return res.status(201).json({ message: 'Email sent successfully' })
+    }
+  } catch (err) {
+    console.error('Send email failed', err)
+    return res.status(500).json({ message: 'Failed to send email' })
+  }
+})
+
+app.get('/clubMembers', requireAuth, requireRoles('CL', 'VP', 'CM'), async (req, res) => {
+  try {
+    if (!req.user.club) return res.status(400).json({ message: 'You are not part of a club' })
+    const [members] = await dbp.query(
+      "SELECT username, role FROM person WHERE club = ? AND role IN ('CL', 'VP', 'CM') ORDER BY role, username",
+      [req.user.club]
+    )
+    return res.json(members)
+  } catch (err) {
+    console.error('Fetch club members failed', err)
+    return res.status(500).json({ message: 'Failed to fetch club members' })
   }
 })
 

@@ -58,6 +58,7 @@ CREATE TABLE `comments` (
 CREATE TABLE `notifications` (
     `notificationid` int NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier for each notification',
     `username` varchar(255) NOT NULL COMMENT 'Recipient username',
+    `senderUsername` varchar(255) DEFAULT NULL COMMENT 'Sender username if sent by a user',
     `clubName` varchar(255) DEFAULT NULL COMMENT 'Associated club if any',
     `type` varchar(50) NOT NULL DEFAULT 'info' COMMENT 'Category of notification',
     `message` text NOT NULL COMMENT 'Notification body',
@@ -66,9 +67,11 @@ CREATE TABLE `notifications` (
     `createdAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation timestamp',
     PRIMARY KEY (`notificationid`),
     KEY `username` (`username`),
+    KEY `senderUsername` (`senderUsername`),
     KEY `clubName` (`clubName`),
     CONSTRAINT `notifications_ibfk_1` FOREIGN KEY (`username`) REFERENCES `person` (`username`) ON DELETE CASCADE ON UPDATE CASCADE,
-    CONSTRAINT `notifications_ibfk_2` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE SET NULL ON UPDATE CASCADE
+    CONSTRAINT `notifications_ibfk_2` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE SET NULL ON UPDATE CASCADE,
+    CONSTRAINT `notifications_ibfk_3` FOREIGN KEY (`senderUsername`) REFERENCES `person` (`username`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 -- ===== CLUBS =====

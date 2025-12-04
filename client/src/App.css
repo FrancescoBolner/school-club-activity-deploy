@@ -874,6 +874,113 @@ form button {
   margin-bottom: 1.5rem;
 }
 
+/* Email Form */
+.email-form {
+  padding: 1.5rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 1.5rem;
+}
+
+.email-form h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+  color: var(--blue-600);
+}
+
+.email-form form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.email-form label {
+  display: flex;
+  flex-direction: row;
+  gap: 0.4rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+  color: var(--slate-700);
+}
+
+.email-form input[type="checkbox"] {
+  width: auto;
+  margin-right: 0.5rem;
+}
+
+.email-form input[type="text"],
+.email-form select,
+.email-form textarea {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: 0.95rem;
+  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.email-form input[type="text"]:focus,
+.email-form select:focus,
+.email-form textarea:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.email-form textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.email-form-buttons {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.email-form-buttons button {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.email-form-buttons button[type="submit"] {
+  background: var(--blue-600);
+  color: var(--slate-700);
+}
+
+.email-form-buttons button[type="submit"]:hover:not(:disabled) {
+  background: var(--blue-700);
+}
+
+.email-form-buttons button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.email-form-buttons button[type="button"] {
+  background: var(--slate-200);
+  color: var(--slate-700);
+}
+
+.email-form-buttons button[type="button"]:hover {
+  background: var(--slate-300);
+}
+
+.notification-sender {
+  font-size: 0.85rem;
+  color: var(--slate-600);
+  font-style: italic;
+  margin-top: 0.5rem;
+}
+
 .clubs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));

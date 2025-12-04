@@ -1,7 +1,11 @@
-import { React, useEffect, useState } from "react"
+import { React, useEffect, useState, useMemo } from "react"
 import { Link } from "react-router-dom"
 import api from "../api"
 import { getSession } from "../utils/auth"
+import dayjs from "dayjs"
+import relativeTime from "dayjs/plugin/relativeTime"
+
+dayjs.extend(relativeTime)
 
 const Notifications = () => {
   const session = getSession()
@@ -9,6 +13,11 @@ const Notifications = () => {
   const [meta, setMeta] = useState({ page: 1, pages: 1, total: 0 })
   const [filters, setFilters] = useState({ search: "", orderBy: "created", order: "desc", page: 1, limit: 6 })
   const [filterOpen, setFilterOpen] = useState(false)
+  const [emailFormOpen, setEmailFormOpen] = useState(false)
+  const [emailForm, setEmailForm] = useState({ recipient: "", message: "", sendToAllClub: false })
+  const [clubMembers, setClubMembers] = useState([])
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const isAdmin = useMemo(() => session && ['CL', 'VP'].includes(session.role), [session?.role])
 
   const updateFilter = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value, page: field === "page" ? value : 1 }))
@@ -40,6 +49,47 @@ const Notifications = () => {
   }
 
   useEffect(() => { fetchNotifications(filters.page) }, [filters])
+
+  useEffect(() => {
+    if (session?.club) {
+      fetchClubMembers()
+    }
+  }, [session?.club])
+
+  const fetchClubMembers = async () => {
+    try {
+      const res = await api.get("/clubMembers")
+      setClubMembers(res.data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleSendEmail = async (e) => {
+    e.preventDefault()
+    if (!emailForm.message) {
+      alert("Message is required")
+      return
+    }
+    if (!emailForm.sendToAllClub && !emailForm.recipient) {
+      alert("Please select a recipient or choose to send to all club members")
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      await api.post("/sendEmail", emailForm)
+      alert(emailForm.sendToAllClub ? "Email sent to all club members!" : "Email sent successfully!")
+      setEmailForm({ recipient: "", message: "", sendToAllClub: false })
+      setEmailFormOpen(false)
+      fetchNotifications(filters.page)
+    } catch (err) {
+      console.error(err)
+      alert(err.response?.data?.message || "Failed to send email")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   const markRead = async (id) => {
     try {
@@ -74,7 +124,63 @@ const Notifications = () => {
           onChange={(e) => updateFilter("search", e.target.value)}
         />
         <button onClick={() => setFilterOpen(!filterOpen)}>≡</button>
+        <button onClick={() => setEmailFormOpen(!emailFormOpen)}>✉</button>
       </div>
+
+      {/* Email Form */}
+      {emailFormOpen && (
+        <div className="email-form">
+          <h3>Send Email</h3>
+          <form onSubmit={handleSendEmail}>
+            {isAdmin && (
+              <div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={emailForm.sendToAllClub}
+                    onChange={(e) => setEmailForm({ ...emailForm, sendToAllClub: e.target.checked, recipient: "" })}
+                  />
+                  Send to all club members
+                </label>
+              </div>
+            )}
+            
+            {!emailForm.sendToAllClub && (
+              <div>
+                <label>Recipient:</label>
+                <select
+                  value={emailForm.recipient}
+                  onChange={(e) => setEmailForm({ ...emailForm, recipient: e.target.value })}
+                  required={!emailForm.sendToAllClub}
+                >
+                  <option value="">Select a member...</option>
+                  {clubMembers.map(m => (
+                    <option key={m.username} value={m.username}>{m.username} ({m.role})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label>Message:</label>
+              <textarea
+                value={emailForm.message}
+                onChange={(e) => setEmailForm({ ...emailForm, message: e.target.value })}
+                placeholder="Write your message..."
+                rows="5"
+                required
+              />
+            </div>
+
+            <div className="email-form-buttons">
+              <button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Sending..." : "Send Email"}
+              </button>
+              <button type="button" onClick={() => setEmailFormOpen(false)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Filter panel */}
       {filterOpen && (
@@ -114,6 +220,9 @@ const Notifications = () => {
               <span className="badge">{n.type}</span>
               <span className="notification-date">{new Date(n.createdAt).toLocaleString('en-GB')}</span>
             </div>
+            {n.senderUsername && (
+              <div className="notification-sender">From: {n.senderUsername}</div>
+            )}
             <div className="notification-body">
               {n.message}
             </div>

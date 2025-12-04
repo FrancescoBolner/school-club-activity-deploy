@@ -61,7 +61,7 @@ function App() {
     }
 
     sync()
-    const interval = setInterval(sync, 8000)
+    const interval = setInterval(sync, 30000)
     const onStorage = () => sync()
     const onSessionChange = () => sync()
     window.addEventListener('storage', onStorage)
