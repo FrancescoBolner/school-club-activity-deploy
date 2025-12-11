@@ -11,27 +11,29 @@ import crypto from 'crypto'
 // Initialize express app
 const app = express()
 
-// Create a connection to the database
+// Create a connection pool to the database
 // USE YOUR OWN DATABASE CREDENTIALS
-const db = mysql.createConnection({
+const db = mysql.createPool({
     host: '127.0.0.1',
     port: '3306',
     user: 'root',
     password: 'password',
-    database: 'school_club_activity'
+    database: 'school_club_activity',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 })
 
 // Promise helper for async/await queries
 const dbp = db.promise()
 
-// Connect to the database
-db.connect(err => {
-  if (err) {
+// Check connection to the database
+dbp.query('SELECT 1')
+  .then(() => console.log('Connected to MySQL via mysql2'))
+  .catch(err => {
     console.error('DB connection error:', err)
     process.exit(1)
-  }
-  console.log('Connected to MySQL via mysql2')
-})
+  })
 
 // --- Auth + utilities ---
 const unauthorized = res => res.status(401).json({ message: 'Authentication required' })
