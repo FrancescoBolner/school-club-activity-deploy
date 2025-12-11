@@ -2,285 +2,160 @@
 
 import { React, useEffect, useMemo, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery, keepPreviousData } from '@tanstack/react-query'
 import DOMPurify from 'dompurify'
 import api from "../api"
 import { getSession } from "../utils/auth"
 
 const ClubPage = () => {
-    // Get club name from URL
     const location = useLocation()
     const clubName = location.pathname.split("/")[2]
+    const navigate = useNavigate()
+    const queryClient = useQueryClient()
+    const session = getSession()
 
-    // State to hold clubs and events data
-    const [club, setClub] = useState(null)
-    const [events, setEvents] = useState([])
-    const [person, setPerson] = useState([])
-    const [comments, setComments] = useState([])
-    const [loadingClub, setLoadingClub] = useState(true)
-    const [loadingEvents, setLoadingEvents] = useState(true)
-    const [loadingMembers, setLoadingMembers] = useState(true)
-    const [loadingComments, setLoadingComments] = useState(true)
-    const [error, setError] = useState("")
-    const [eventsError, setEventsError] = useState("")
-    const [membersError, setMembersError] = useState("")
-    const [commentsError, setCommentsError] = useState("")
     const [eventFilters, setEventFilters] = useState({ search: "", orderBy: "startDate", order: "asc", page: 1, limit: 5 })
     const [eventFilterOpen, setEventFilterOpen] = useState(false)
-    const [commentFilters, setCommentFilters] = useState({ search: "", orderBy: "date", order: "desc", page: 1, limit: 10 })
-    const [eventMeta, setEventMeta] = useState({ page: 1, pages: 1, total: 0 })
-    const [commentMeta, setCommentMeta] = useState({ page: 1, pages: 1, total: 0 })
-    const [hasMoreComments, setHasMoreComments] = useState(true)
+    
+    const [commentFilters, setCommentFilters] = useState({ search: "", orderBy: "date", order: "desc", limit: 10 })
+    
     const [newComment, setNewComment] = useState({ comment: "", rating: 0 })
-    const [isSubmittingComment, setIsSubmittingComment] = useState(false)
-    const session = getSession()
+
     const isAdmin = useMemo(() => session && ['CL', 'VP'].includes(session.role) && session.club === clubName, [session, clubName])
     const isLeader = useMemo(() => session && session.role === 'CL' && session.club === clubName, [session, clubName])
     const isMember = useMemo(() => session && session.club === clubName && ['CL','VP','CM'].includes(session.role), [session, clubName])
     const isPending = useMemo(() => session && session.club === clubName && session.role === 'STU', [session, clubName])
 
-    // Navigation hook to return to home page after creation
-    const navigate = useNavigate()
+    // 1. Fetch Club
+    const { data: club, isLoading: loadingClub, error: clubError } = useQuery({
+        queryKey: ['club', clubName],
+        queryFn: () => api.get("/clubs/" + clubName).then(res => res.data?.[0] || null)
+    })
 
-    const fetchClub = async () => {
-        setLoadingClub(true)
-        setError("")
-        try {
-            const res = await api.get("/clubs/" + clubName)
-            setClub(res.data?.[0] || null)
-        } catch (err) {
-            console.error(err)
-            setError("Unable to load club.")
-        } finally {
-            setLoadingClub(false)
-        }
+    // 2. Fetch Members
+    const { data: person = [], isLoading: loadingMembers, error: membersError } = useQuery({
+        queryKey: ['members', clubName],
+        queryFn: () => api.get("/person/" + clubName).then(res => res.data)
+    })
+
+    // 3. Fetch Events
+    const { data: eventsData, isLoading: loadingEvents, error: eventsError } = useQuery({
+        queryKey: ['events', clubName, eventFilters],
+        queryFn: () => api.get("/events/" + clubName, { params: { q: eventFilters.search, ...eventFilters } }).then(res => res.data),
+        placeholderData: keepPreviousData
+    })
+
+    const events = eventsData?.data || eventsData || []
+    const eventMeta = {
+        page: eventsData?.page || 1,
+        pages: eventsData?.pages || Math.max(1, Math.ceil((eventsData?.total || events.length) / eventFilters.limit)),
+        total: eventsData?.total || events.length
     }
 
-    const fetchEvents = async (page = eventFilters.page) => {
-        setLoadingEvents(true)
-        setEventsError("")
-        try {
-            const res = await api.get("/events/" + clubName, {
-                params: {
-                    q: eventFilters.search,
-                    orderBy: eventFilters.orderBy,
-                    order: eventFilters.order,
-                    limit: eventFilters.limit,
-                    page
-                }
-            })
-            const payload = res.data.data ? res.data.data : res.data
-            setEvents(payload)
-            setEventMeta({
-                page: res.data.page || page,
-                pages: res.data.pages || Math.max(1, Math.ceil((res.data.total || payload.length) / eventFilters.limit)),
-                total: res.data.total || payload.length
-            })
-        } catch (err) {
-            console.error(err)
-            setEventsError("Unable to load events.")
-        } finally {
-            setLoadingEvents(false)
-        }
-    }
+    // 4. Fetch Comments (Infinite)
+    const {
+        data: commentsData,
+        fetchNextPage,
+        hasNextPage,
+        isFetchingNextPage,
+        isLoading: loadingComments,
+        error: commentsError
+    } = useInfiniteQuery({
+        queryKey: ['comments', clubName, commentFilters],
+        queryFn: ({ pageParam = 1 }) => api.get("/comments/" + clubName, { 
+            params: { q: commentFilters.search, ...commentFilters, page: pageParam } 
+        }).then(res => res.data),
+        getNextPageParam: (lastPage) => {
+            const current = lastPage.page || 1
+            const totalPages = lastPage.pages || 1
+            return current < totalPages ? current + 1 : undefined
+        },
+        initialPageParam: 1
+    })
 
-    const fetchMembers = async () => {
-        setLoadingMembers(true)
-        setMembersError("")
-        try {
-            const res = await api.get("/person/" + clubName)
-            setPerson(res.data)
-        } catch (err) {
-            console.error(err)
-            setMembersError("Unable to load members.")
-        } finally {
-            setLoadingMembers(false)
-        }
-    }
+    const comments = commentsData?.pages.flatMap(page => page.data || page) || []
+    const commentTotal = commentsData?.pages[0]?.total || comments.length
 
-    const fetchComments = async (page = commentFilters.page, append = false) => {
-        setLoadingComments(true)
-        setCommentsError("")
-        try {
-            const res = await api.get("/comments/" + clubName, {
-                params: {
-                    q: commentFilters.search,
-                    orderBy: commentFilters.orderBy,
-                    order: commentFilters.order,
-                    limit: commentFilters.limit,
-                    page
-                }
-            })
-            const payload = res.data.data ? res.data.data : res.data
-            if (append) {
-                setComments(prev => [...prev, ...payload])
-            } else {
-                setComments(payload)
-            }
-            const meta = {
-                page: res.data.page || page,
-                pages: res.data.pages || Math.max(1, Math.ceil((res.data.total || payload.length) / commentFilters.limit)),
-                total: res.data.total || payload.length
-            }
-            setCommentMeta(meta)
-            setHasMoreComments(meta.page < meta.pages)
-        } catch (err) {
-            console.error(err)
-            setCommentsError("Unable to load comments.")
-        } finally {
-            setLoadingComments(false)
-        }
-    }
+    // Mutations
+    const joinClubMutation = useMutation({
+        mutationFn: () => api.put(`/joinClubs/${clubName}`),
+        onSuccess: () => {
+            alert('Join request submitted! Please wait for approval.')
+            queryClient.invalidateQueries(['members', clubName])
+            queryClient.invalidateQueries(['club', clubName])
+        },
+        onError: (err) => alert(err.response?.data?.message || 'Failed to join club')
+    })
+
+    const cancelJoinMutation = useMutation({
+        mutationFn: () => api.delete('/cancelJoinRequest'),
+        onSuccess: () => {
+            alert('Join request cancelled.')
+            queryClient.invalidateQueries(['members', clubName])
+            queryClient.invalidateQueries(['club', clubName])
+        },
+        onError: (err) => alert(err.response?.data?.message || 'Failed to cancel request')
+    })
+
+    const quitClubMutation = useMutation({
+        mutationFn: () => api.delete("/quitClub"),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['members', clubName])
+            queryClient.invalidateQueries(['club', clubName])
+            navigate("../")
+        },
+        onError: (err) => alert(err.response?.data?.message || "Unable to quit club")
+    })
+
+    const deleteClubMutation = useMutation({
+        mutationFn: () => api.delete("/clubs/" + clubName),
+        onSuccess: () => navigate("../../"),
+        onError: (err) => alert(err.response?.data?.message || "Unable to delete club")
+    })
+
+    const memberActionMutation = useMutation({
+        mutationFn: ({ url, method = 'put', body = {} }) => api[method](url, body),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['members', clubName])
+            queryClient.invalidateQueries(['club', clubName])
+        },
+        onError: (err) => alert(err.response?.data?.message || "Action failed")
+    })
+
+    const eventActionMutation = useMutation({
+        mutationFn: ({ url, method }) => api[method](url),
+        onSuccess: () => queryClient.invalidateQueries(['events', clubName]),
+        onError: (err) => alert(err.response?.data?.message || "Action failed")
+    })
+
+    const commentActionMutation = useMutation({
+        mutationFn: ({ url, method, body }) => api[method](url, body),
+        onSuccess: () => queryClient.invalidateQueries(['comments', clubName]),
+        onError: (err) => alert(err.response?.data?.message || "Action failed")
+    })
 
     const updateEventFilter = (field, value) => {
         setEventFilters(prev => ({ ...prev, [field]: value, page: field === "page" ? value : 1 }))
     }
 
     const updateCommentFilter = (field, value) => {
-        setCommentFilters(prev => ({ ...prev, [field]: value, page: field === "page" ? value : 1 }))
+        setCommentFilters(prev => ({ ...prev, [field]: value }))
     }
 
-    useEffect(() => { fetchClub(); fetchMembers() }, [])
-    useEffect(() => { fetchEvents(eventFilters.page) }, [eventFilters.page, eventFilters.search, eventFilters.orderBy, eventFilters.order, eventFilters.limit])
-    useEffect(() => { 
-        setComments([]) // Reset comments when filters change
-        setCommentFilters(prev => ({ ...prev, page: 1 }))
-        fetchComments(1, false) 
-    }, [commentFilters.search, commentFilters.orderBy, commentFilters.order])
-
-    const handleAccept = async (username) => {
-        if (!isAdmin) return alert("You must be a CL/VP of this club.")
-        try {
-            await api.put("/accept/" + username)
-            await Promise.all([fetchMembers(), fetchClub()])
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to accept member")
-        }
-    }
-
-    const handleReject = async (username) => {
-        if (!isAdmin) return alert("You must be a CL/VP of this club.")
-        try {
-            await api.put("/reject/" + username)
-            await Promise.all([fetchMembers(), fetchClub()])
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to reject member")
-        }
-    }
-
-    const handlePromote = async (username) => {
-        if (!isLeader) return alert("Only CL can promote.")
-        try {
-            await api.put("/promote/" + username, { action: 'promote' })
-            await Promise.all([fetchMembers(), fetchClub()])
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to promote member")
-        }
-    }
-
-    const handleDemote = async (username) => {
-        if (!isLeader) return alert("Only CL can demote.")
-        try {
-            await api.put("/promote/" + username, { action: 'demote' })
-            await Promise.all([fetchMembers(), fetchClub()])
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to demote member")
-        }
-    }
-
-    const handleExpell = async (username) => {
-        if (!isAdmin && username !== session?.username) return alert("Not allowed to remove this member.")
-        try {
-            await api.put("/expell/" + username)
-            await Promise.all([fetchMembers(), fetchClub()])
-            if (username === session?.username) navigate("../")
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to remove member")
-        }
-    }
-
-    const handleQuit = async (username) => {
-        if (!isMember || username !== session?.username) return alert("Not allowed to quit club.")
-        if (window.confirm('Are you sure you want to quit this club?')) {
-            try {
-                await api.delete("/quitClub")
-                await Promise.all([fetchMembers(), fetchClub()])
-                if (username === session?.username) navigate("../")
-            } catch (err) {
-                alert(err.response?.data?.message || "Unable to quit club")
-            }
-        }
-    }
-
-    const handleDeleteEvent = async (eventid) => {
-        if (!isAdmin) return alert("You must be a CL/VP of this club.")
-        try {
-            await api.delete("/event/" + eventid)
-            await fetchEvents(eventFilters.page)
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to delete event")
-        }
-    }
-
-    const handleAcceptEvent = async (eventid) => {
-        if (!isAdmin) return alert("You must be a CL/VP of this club.")
-        try {
-            await api.put("/event/" + eventid)
-            await fetchEvents(eventFilters.page)
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to accept event")
-        }
-    }
-
-    const handleDeleteComment = async (commentid) => {
-        try {
-            await api.delete("/comment/" + commentid)
-            await fetchComments(commentFilters.page)
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to delete comment")
-        }
-    }
-
-    const handleDeleteClub = async (clubName) => {
-        if (!isLeader) return alert("Only the club leader can delete the club.")
-        try {
-            await api.delete("/clubs/" + clubName)
-            navigate("../../")
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to delete club")
-        }
-    }
-
-    const handleSubmitComment = async (e) => {
+    const handleSubmitComment = (e) => {
         e.preventDefault()
         if (!newComment.comment.trim()) return alert("Comment cannot be empty")
-        setIsSubmittingComment(true)
-        try {
-            await api.post("/comment", { 
-                comment: newComment.comment, 
-                rating: Number(newComment.rating), 
-                clubName 
-            })
-            setNewComment({ comment: "", rating: 0 })
-            setComments([]) // Reset to reload from beginning
-            await fetchComments(1, false)
-        } catch (err) {
-            alert(err.response?.data?.message || "Unable to add comment")
-        } finally {
-            setIsSubmittingComment(false)
-        }
-    }
-
-    const loadMoreComments = () => {
-        if (!loadingComments && hasMoreComments) {
-            const nextPage = commentMeta.page + 1
-            setCommentFilters(prev => ({ ...prev, page: nextPage }))
-            fetchComments(nextPage, true)
-        }
+        commentActionMutation.mutate({
+            url: "/comment",
+            method: "post",
+            body: { comment: newComment.comment, rating: Number(newComment.rating), clubName }
+        }, {
+            onSuccess: () => setNewComment({ comment: "", rating: 0 })
+        })
     }
 
     const acceptedEvents = useMemo(() => events.filter(e => e.accepted), [events])
 
-    // Render club information
     return (
         <div className="club-page">
 
@@ -288,7 +163,7 @@ const ClubPage = () => {
             {loadingClub ? (
                 <div className="card">Loading club...</div>
             ) : !club ? (
-                <div className="card">{error || 'Club not found.'}</div>
+                <div className="card">{clubError?.message || 'Club not found.'}</div>
             ) : (
                 <div className="club-header" key={club.clubName}>
                     <div 
@@ -306,30 +181,16 @@ const ClubPage = () => {
                             <div className="club-actions">
                                 {isAdmin && <button><Link to={"/UpdateClub/" + clubName}>Update Info</Link></button>}
                                 {!isMember && !isPending && !session?.club && (
-                                    <button className="btn-primary" onClick={async () => {
+                                    <button className="btn-primary" onClick={() => {
                                         if (!session) return navigate("/LogIn")
-                                        try {
-                                            await api.put(`/joinClubs/${clubName}`);
-                                            alert('Join request submitted! Please wait for approval.');
-                                            await Promise.all([fetchMembers(), fetchClub()]);
-                                        } catch (err) {
-                                            alert(err.response?.data?.message || 'Failed to join club');
-                                        }
+                                        joinClubMutation.mutate()
                                     }}>Join / Request</button>
                                 )}
                                 {isPending && (
                                     <>
                                         <button className="btn-muted" disabled>Request pending</button>
-                                        <button className="deletebtn" onClick={async () => {
-                                            if (window.confirm('Cancel your join request?')) {
-                                                try {
-                                                    await api.delete('/cancelJoinRequest');
-                                                    alert('Join request cancelled.');
-                                                    await Promise.all([fetchMembers(), fetchClub()]);
-                                                } catch (err) {
-                                                    alert(err.response?.data?.message || 'Failed to cancel request');
-                                                }
-                                            }
+                                        <button className="deletebtn" onClick={() => {
+                                            if (window.confirm('Cancel your join request?')) cancelJoinMutation.mutate()
                                         }}>Cancel Request</button>
                                     </>
                                 )}
@@ -354,7 +215,7 @@ const ClubPage = () => {
                             </div>
                             <div className="stat">
                                 <span className="stat-label">Comments</span>
-                                <span className="stat-value">{commentMeta.total}</span>
+                                <span className="stat-value">{commentTotal}</span>
                             </div>
                         </div>
                     </div>
@@ -362,7 +223,6 @@ const ClubPage = () => {
             )}
             <div className="events">
                 <h3 style={{margin: "0 0 0.5rem 0", fontSize: "1.35rem", color: "black"}}>Events:</h3>
-                {/* Top bar */}
                 <div className="top-bar">
                     <input
                         type="text"
@@ -373,7 +233,6 @@ const ClubPage = () => {
                     <button onClick={() => setEventFilterOpen(!eventFilterOpen)}>≡</button>
                 </div>
 
-                {/* Filter panel */}
                 {eventFilterOpen && (
                     <div className="filter-panel">
                         <label>
@@ -401,7 +260,7 @@ const ClubPage = () => {
                         </label>
                     </div>
                 )}
-                {eventsError && <p className="alert error" style={{ marginTop: 0 }}>{eventsError}</p>}
+                {eventsError && <p className="alert error" style={{ marginTop: 0 }}>Unable to load events.</p>}
                 {loadingEvents ? (
                     <p style={{ textAlign: "center", opacity: 0.6 }}>Loading events...</p>
                 ) : events.length === 0 ? (
@@ -424,8 +283,8 @@ const ClubPage = () => {
                         </div>
                         <p className="event-description">{event.description}</p>
                         <div className="actions">
-                            {!event.accepted && isLeader && (<button onClick={() => handleAcceptEvent(event.eventid)}>Accept Event</button>)}
-                            {isAdmin && (<button className="deletebtn" onClick={() => handleDeleteEvent(event.eventid)}>Delete Event</button>)}
+                            {!event.accepted && isLeader && (<button onClick={() => eventActionMutation.mutate({ url: "/event/" + event.eventid, method: "put" })}>Accept Event</button>)}
+                            {isAdmin && (<button className="deletebtn" onClick={() => eventActionMutation.mutate({ url: "/event/" + event.eventid, method: "delete" })}>Delete Event</button>)}
                         </div>
                     </div>
                 ))}
@@ -475,7 +334,7 @@ const ClubPage = () => {
                 <div className="members-card">
                     <div className="members-section">
                     <h3>Members:</h3>
-                    {membersError && <p className="alert error">{membersError}</p>}
+                    {membersError && <p className="alert error">Unable to load members.</p>}
                     {loadingMembers ? <p style={{ opacity: 0.6 }}>Loading members...</p> : (
                     <table>
                         <thead>
@@ -493,12 +352,12 @@ const ClubPage = () => {
                                     <td>
                                         {isLeader && (
                                             <>
-                                                {p.role === "CM" && (<button onClick={() => handlePromote(p.username)} title="Promote to VP">▲</button>)}
-                                                {p.role === "VP" && (<button onClick={() => handleDemote(p.username)} title="Demote to member">▼</button>)}
+                                                {p.role === "CM" && (<button onClick={() => memberActionMutation.mutate({ url: "/promote/" + p.username, body: { action: 'promote' } })} title="Promote to VP">▲</button>)}
+                                                {p.role === "VP" && (<button onClick={() => memberActionMutation.mutate({ url: "/promote/" + p.username, body: { action: 'demote' } })} title="Demote to member">▼</button>)}
                                             </>
                                         )}
                                         {isAdmin && p.role !== "CL" && p.username !== session?.username && (
-                                            <button className="deletebtn" onClick={() => handleExpell(p.username)} style={{margin: "0 0 0 0.5rem"}}>X</button>
+                                            <button className="deletebtn" onClick={() => memberActionMutation.mutate({ url: "/expell/" + p.username })} style={{margin: "0 0 0 0.5rem"}}>X</button>
                                         )}
                                     </td>
                                 </tr>
@@ -528,8 +387,8 @@ const ClubPage = () => {
                                         <tr key={p.username}>
                                             <td>{p.username}</td>
                                             <td>
-                                                <button onClick={() => handleAccept(p.username)}>✓</button>
-                                                <button onClick={() => handleReject(p.username)} className="deletebtn" style={{margin: "0 0 0 0.5rem"}}>✖</button>
+                                                <button onClick={() => memberActionMutation.mutate({ url: "/accept/" + p.username })}>✓</button>
+                                                <button onClick={() => memberActionMutation.mutate({ url: "/reject/" + p.username })} className="deletebtn" style={{margin: "0 0 0 0.5rem"}}>✖</button>
                                             </td>
                                         </tr>
                                     ))}
@@ -542,7 +401,6 @@ const ClubPage = () => {
                 </div>
                 <h3 style={{marginTop: "0.6rem"}}>Write a comment:</h3>
                 
-                {/* Inline comment form */}
                 {session && (
                     <form onSubmit={handleSubmitComment} style={{ marginBottom: "1rem", padding: "1rem", border: "1px solid #e2e8f0", borderRadius: "8px", backgroundColor: "#f8fafc" }}>
                         <textarea 
@@ -568,8 +426,8 @@ const ClubPage = () => {
                                     <option value={5}>⭐ 5</option>
                                 </select>
                             </label>
-                            <button type="submit" disabled={isSubmittingComment} style={{ marginLeft: "auto" }}>
-                                {isSubmittingComment ? "Posting..." : "Post Comment"}
+                            <button type="submit" disabled={commentActionMutation.isPending} style={{ marginLeft: "auto" }}>
+                                {commentActionMutation.isPending ? "Posting..." : "Post Comment"}
                             </button>
                         </div>
                     </form>
@@ -599,7 +457,7 @@ const ClubPage = () => {
                     </div>
                 </div>
                 <div className="comments-list" style={{ maxHeight: "600px", overflowY: "auto" }}>
-                    {commentsError && <p className="alert error">{commentsError}</p>}
+                    {commentsError && <p className="alert error">Unable to load comments.</p>}
                     {comments.length === 0 && !loadingComments ? (
                         <div>
                             <p style={{ textAlign: "center", opacity: 0.6 }}>No comments yet</p>
@@ -617,19 +475,19 @@ const ClubPage = () => {
                                 {c.rating > 0 && (<div className="rating">⭐ {c.rating}/5</div>)}
                                 <div style={{marginLeft: "auto"}}>
                                     {(isAdmin || c.username === session?.username) && (
-                                        <button className="deletebtn" onClick={() => handleDeleteComment(c.commentid)}>Delete</button>
+                                        <button className="deletebtn" onClick={() => commentActionMutation.mutate({ url: "/comment/" + c.commentid, method: "delete" })}>Delete</button>
                                     )}
                                 </div>
                             </div>
                         </div>
                     ))}
                     {loadingComments && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading comments...</p>}
-                    {hasMoreComments && !loadingComments && comments.length > 0 && (
-                        <button onClick={loadMoreComments} style={{ width: "100%", marginTop: "1rem" }}>
-                            Load More Comments
+                    {hasNextPage && !loadingComments && (
+                        <button onClick={() => fetchNextPage()} disabled={isFetchingNextPage} style={{ width: "100%", marginTop: "1rem" }}>
+                            {isFetchingNextPage ? "Loading more..." : "Load More Comments"}
                         </button>
                     )}
-                    {!hasMoreComments && comments.length > 0 && (
+                    {!hasNextPage && comments.length > 0 && (
                         <p style={{ textAlign: "center", opacity: 0.6, marginTop: "1rem" }}>No more comments</p>
                     )}
                 </div>
@@ -639,34 +497,25 @@ const ClubPage = () => {
             </div>
             <div>
                 {!isMember && !isPending && !session?.club && (
-                    <button onClick={async () => {
-                        try {
-                            await api.put(`/joinClubs/${clubName}`);
-                            alert('Join request submitted! Please wait for approval.');
-                            await Promise.all([fetchMembers(), fetchClub()]);
-                        } catch (err) {
-                            alert(err.response?.data?.message || 'Failed to join club');
-                        }
+                    <button onClick={() => {
+                        if (!session) return navigate("/LogIn")
+                        joinClubMutation.mutate()
                     }}>Join Club</button>
                 )}&nbsp;
                 {isPending && (
                     <>
                         <button className="btn-muted" disabled>Request pending</button>&nbsp;
-                        <button className="deletebtn" onClick={async () => {
-                            if (window.confirm('Cancel your join request?')) {
-                                try {
-                                    await api.delete('/cancelJoinRequest');
-                                    alert('Join request cancelled.');
-                                    await Promise.all([fetchMembers(), fetchClub()]);
-                                } catch (err) {
-                                    alert(err.response?.data?.message || 'Failed to cancel request');
-                                }
-                            }
+                        <button className="deletebtn" onClick={() => {
+                            if (window.confirm('Cancel your join request?')) cancelJoinMutation.mutate()
                         }}>Cancel Request</button>
                     </>
                 )}
-                {isMember && !isLeader && <button className="deletebtn" onClick={() => handleQuit(session.username)}>Quit club</button>}
-                {isLeader && <button className="deletebtn" onClick={() => handleDeleteClub(clubName)}>Delete Club</button>}
+                {isMember && !isLeader && <button className="deletebtn" onClick={() => {
+                    if (window.confirm('Are you sure you want to quit this club?')) quitClubMutation.mutate()
+                }}>Quit club</button>}
+                {isLeader && <button className="deletebtn" onClick={() => {
+                    if (window.confirm('Are you sure you want to delete this club?')) deleteClubMutation.mutate()
+                }}>Delete Club</button>}
             </div>
         </div>
     )

@@ -1,5 +1,6 @@
 import { React, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import DOMPurify from 'dompurify';
 import api from "../api";
 import { getSession } from "../utils/auth";
@@ -18,16 +19,12 @@ const ProgressBar = ({ percentage }) => {
 
 export default function BrowseClubs() {
   const session = getSession();
-  const [clubs, setClubs] = useState([]);
-  const [meta, setMeta] = useState({ page: 1, pages: 1, total: 0 });
   const [search, setSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [status, setStatus] = useState("all"); // full, notFull, all
   const [orderBy, setOrderBy] = useState("membersAsc"); // nameAsc, nameDesc, membersDesc
   const [currentPage, setCurrentPage] = useState(1);
   const [limit, setLimit] = useState(8);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   const mappedOrder = () => {
     switch (orderBy) {
@@ -43,11 +40,10 @@ export default function BrowseClubs() {
     }
   };
 
-  const loadClubs = async () => {
-    setLoading(true);
-    setError("");
-    const { orderBy: ob, order } = mappedOrder();
-    try {
+  const { data: clubsData, isLoading, isError } = useQuery({
+    queryKey: ['clubs', { search, status, orderBy, currentPage, limit }],
+    queryFn: async () => {
+      const { orderBy: ob, order } = mappedOrder();
       const res = await api.get("/clubs", {
         params: {
           q: search,
@@ -58,29 +54,21 @@ export default function BrowseClubs() {
           limit
         }
       });
-      const payload = res.data.data ? res.data.data : res.data;
-      setClubs(payload);
-      setMeta({
-        page: res.data.page || 1,
-        pages: res.data.pages || Math.max(1, Math.ceil(payload.length / limit)),
-        total: res.data.total || payload.length
-      });
-    } catch (err) {
-      console.error(err);
-      setError("Failed to load clubs.");
-    } finally {
-      setLoading(false);
-    }
+      return res.data;
+    },
+    placeholderData: keepPreviousData
+  });
+
+  const clubs = clubsData?.data || clubsData || [];
+  const meta = {
+    page: clubsData?.page || 1,
+    pages: clubsData?.pages || Math.max(1, Math.ceil((clubsData?.total || clubs.length) / limit)),
+    total: clubsData?.total || clubs.length
   };
 
   useEffect(() => {
     setCurrentPage(1);
   }, [search, status, orderBy, limit]);
-
-  useEffect(() => {
-    loadClubs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, status, orderBy, currentPage, limit]);
 
   return (
     <div className="browse-page">
@@ -95,7 +83,7 @@ export default function BrowseClubs() {
         <button onClick={() => setFilterOpen(!filterOpen)}>≡</button>
       </div>
 
-      {error && <div className="alert error">{error}</div>}
+      {isError && <div className="alert error">Failed to load clubs.</div>}
 
       {/* Filter panel */}
       {filterOpen && (
@@ -130,7 +118,7 @@ export default function BrowseClubs() {
         </div>
       )}
 
-      {loading && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading...</p>}
+      {isLoading && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading...</p>}
 
       {/* Clubs grid */}
       <div className="clubs-grid">

@@ -2,47 +2,37 @@
 
 import { React, useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import api from "../api"
 import BrowseClubs from "./BrowseClub.jsx";
 import { getSession } from "../utils/auth";
 
 const Home = () => {
     const session = getSession()
-    const [events, setEvents] = useState([])
-    const [eventMeta, setEventMeta] = useState({ page: 1, pages: 1, total: 0 })
+    const [page, setPage] = useState(1)
     const [search, setSearch] = useState("")
     const [orderBy, setOrderBy] = useState("startDate")
     const [order, setOrder] = useState("asc")
     const [limit, setLimit] = useState(4)
-    const [error, setError] = useState("")
-    const [loading, setLoading] = useState(false)
     const [filterOpen, setFilterOpen] = useState(false)
 
-    const fetchEvents = async (page = 1) => {
-        setLoading(true)
-        setError("")
-        try {
-            const res = await api.get("/events", {
-                params: { q: search, orderBy, order, page, limit }
-            })
-            const data = res.data.data ? res.data.data : res.data
-            setEvents(data)
-            setEventMeta({
-                page: res.data.page || 1,
-                pages: res.data.pages || Math.max(1, Math.ceil((res.data.total || data.length) / limit)),
-                total: res.data.total || data.length
-            })
-        } catch (err) {
-            console.error(err)
-            setError("Unable to load events.")
-        } finally {
-            setLoading(false)
-        }
+    const { data: eventsData, isLoading, isError } = useQuery({
+        queryKey: ['events', { search, orderBy, order, page, limit }],
+        queryFn: () => api.get("/events", {
+            params: { q: search, orderBy, order, page, limit }
+        }).then(res => res.data),
+        placeholderData: keepPreviousData
+    })
+
+    const events = eventsData?.data || eventsData || []
+    const eventMeta = {
+        page: eventsData?.page || 1,
+        pages: eventsData?.pages || Math.max(1, Math.ceil((eventsData?.total || events.length) / limit)),
+        total: eventsData?.total || events.length
     }
 
     useEffect(() => {
-        fetchEvents(1)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        setPage(1)
     }, [search, orderBy, order, limit])
 
     // Render clubs and events
@@ -59,7 +49,7 @@ const Home = () => {
                 </div>
             )}
             <h1>Incoming Events</h1>
-            {error && <div className="alert error">{error}</div>}
+            {isError && <div className="alert error">Unable to load events.</div>}
             <div className="top-bar">
                 <input
                     type="text"
@@ -98,7 +88,7 @@ const Home = () => {
                 </div>
             )}
             <div className="events">
-                {loading && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading events...</p>}
+                {isLoading && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading events...</p>}
                 {events.map((event) => (
                     <div className="event" key={event.eventid}>
                     <div className="event-header">
@@ -143,7 +133,7 @@ const Home = () => {
                             <button
                                 key={page}
                                 className={current === page ? "active" : ""}
-                                onClick={() => fetchEvents(page)}
+                                onClick={() => setPage(page)}
                             >
                                 {page}
                             </button>

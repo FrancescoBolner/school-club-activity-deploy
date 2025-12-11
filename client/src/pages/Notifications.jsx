@@ -1,5 +1,6 @@
-import { React, useEffect, useState, useMemo } from "react"
+import { React, useState, useMemo } from "react"
 import { Link } from "react-router-dom"
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import api from "../api"
 import { getSession } from "../utils/auth"
 import dayjs from "dayjs"
@@ -9,135 +10,91 @@ dayjs.extend(relativeTime)
 
 const Notifications = () => {
   const session = getSession()
-  const [items, setItems] = useState([])
-  const [meta, setMeta] = useState({ page: 1, pages: 1, total: 0 })
-  const [filters, setFilters] = useState({ search: "", orderBy: "created", order: "desc", page: 1, limit: 6 })
+  const queryClient = useQueryClient()
+  
+  const [filters, setFilters] = useState({ search: "", orderBy: "created", order: "desc", page: 1, limit: 6, unread: 'all' })
   const [filterOpen, setFilterOpen] = useState(false)
+  
   const [emailFormOpen, setEmailFormOpen] = useState(false)
   const [emailForm, setEmailForm] = useState({ recipient: "", message: "", sendToAllClub: false })
-  const [clubMembers, setClubMembers] = useState([])
-  const [allUsers, setAllUsers] = useState([])
+  const [recipientSearch, setRecipientSearch] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+
   const isAdmin = useMemo(() => session && ['CL', 'VP'].includes(session.role), [session?.role])
+
+  // 1. Fetch Notifications
+  const { data: notificationsData, isLoading: loadingNotifications, error: notificationsError } = useQuery({
+    queryKey: ['notifications', filters],
+    queryFn: () => {
+        const params = {
+            q: filters.search,
+            orderBy: filters.orderBy,
+            order: filters.order,
+            limit: filters.limit,
+            page: filters.page
+        }
+        if (filters.unread === 'unread') params.unread = true
+        return api.get("/notifications", { params }).then(res => res.data)
+    },
+    placeholderData: keepPreviousData,
+    enabled: !!session
+  })
+
+  const items = notificationsData?.data || notificationsData || []
+  const meta = {
+    page: notificationsData?.page || filters.page,
+    pages: notificationsData?.pages || Math.max(1, Math.ceil((notificationsData?.total || items.length) / filters.limit)),
+    total: notificationsData?.total || items.length
+  }
+
+  // 2. Fetch User Suggestions (for email)
+  const { data: userSuggestions = [] } = useQuery({
+    queryKey: ['users', recipientSearch],
+    queryFn: () => api.get("/allUsers", { params: { q: recipientSearch } }).then(res => res.data),
+    enabled: !!recipientSearch && recipientSearch.length > 0,
+    staleTime: 1000 * 60 // Cache for 1 minute
+  })
+
+  // Mutations
+  const sendEmailMutation = useMutation({
+    mutationFn: (data) => api.post("/sendEmail", data),
+    onSuccess: () => {
+        alert(emailForm.sendToAllClub ? "Email sent to all club members!" : "Email sent successfully!")
+        setEmailForm({ recipient: "", message: "", sendToAllClub: false })
+        setRecipientSearch("")
+        setEmailFormOpen(false)
+        queryClient.invalidateQueries(['notifications'])
+    },
+    onError: (err) => alert(err.response?.data?.message || "Failed to send email")
+  })
+
+  const markReadMutation = useMutation({
+    mutationFn: ({ id, read }) => api.put(`/notifications/${id}/${read ? 'read' : 'unread'}`),
+    onSuccess: () => queryClient.invalidateQueries(['notifications'])
+  })
 
   const updateFilter = (field, value) => {
     setFilters(prev => ({ ...prev, [field]: value, page: field === "page" ? value : 1 }))
   }
 
-  const fetchNotifications = async (page = filters.page) => {
-    if (!session) return
-    try {
-      const params = {
-        q: filters.search,
-        orderBy: filters.orderBy,
-        order: filters.order,
-        limit: filters.limit,
-        page
-      }
-      if (filters.unread === 'unread') {
-        params.unread = true
-      }
-      const res = await api.get("/notifications", { params })
-      const payload = res.data.data ? res.data.data : res.data
-      setItems(payload)
-      setMeta({
-        page: res.data.page || page,
-        pages: res.data.pages || Math.max(1, Math.ceil((res.data.total || payload.length) / filters.limit)),
-        total: res.data.total || payload.length
-      })
-    } catch (err) {
-      console.error(err)
-      alert("Unable to load notifications")
-    }
-  }
-
-  useEffect(() => { fetchNotifications(filters.page) }, [filters])
-
-  useEffect(() => {
-    if (session?.club) {
-      fetchClubMembers()
-    }
-  }, [session?.club])
-
-  const fetchClubMembers = async () => {
-    try {
-      const res = await api.get("/clubMembers")
-      setClubMembers(res.data)
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const fetchUserSuggestions = async (search) => {
-    if (!search || search.length < 1) {
-      setAllUsers([])
-      return
-    }
-    try {
-      const res = await api.get("/allUsers", { params: { q: search } })
-      setAllUsers(res.data)
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
   const handleRecipientChange = (value) => {
     setEmailForm({ ...emailForm, recipient: value })
-    fetchUserSuggestions(value)
+    setRecipientSearch(value)
     setShowSuggestions(true)
   }
 
   const selectUser = (username) => {
     setEmailForm({ ...emailForm, recipient: username })
+    setRecipientSearch("")
     setShowSuggestions(false)
-    setAllUsers([])
   }
 
-  const handleSendEmail = async (e) => {
+  const handleSendEmail = (e) => {
     e.preventDefault()
-    if (!emailForm.message) {
-      alert("Message is required")
-      return
-    }
-    if (!emailForm.sendToAllClub && !emailForm.recipient) {
-      alert("Please select a recipient or choose to send to all club members")
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      await api.post("/sendEmail", emailForm)
-      alert(emailForm.sendToAllClub ? "Email sent to all club members!" : "Email sent successfully!")
-      setEmailForm({ recipient: "", message: "", sendToAllClub: false })
-      setEmailFormOpen(false)
-      fetchNotifications(filters.page)
-    } catch (err) {
-      console.error(err)
-      alert(err.response?.data?.message || "Failed to send email")
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const markRead = async (id) => {
-    try {
-      await api.put(`/notifications/${id}/read`)
-      fetchNotifications(meta.page)
-    } catch (err) {
-      console.error(err)
-      alert("Unable to mark notification")
-    }
-  }
-
-  const markUnread = async (id) => {
-    try {
-      await api.put(`/notifications/${id}/unread`)
-      fetchNotifications(meta.page)
-    } catch (err) {
-      console.error(err)
-      alert("Unable to update notification")
-    }
+    if (!emailForm.message) return alert("Message is required")
+    if (!emailForm.sendToAllClub && !emailForm.recipient) return alert("Please select a recipient or choose to send to all club members")
+    
+    sendEmailMutation.mutate(emailForm)
   }
 
   if (!session) return <p style={{ textAlign: "center" }}>Login to view notifications.</p>
@@ -187,7 +144,7 @@ const Notifications = () => {
                   required={!emailForm.sendToAllClub}
                   autoComplete="off"
                 />
-                {showSuggestions && allUsers.length > 0 && (
+                {showSuggestions && userSuggestions.length > 0 && (
                   <div style={{
                     position: 'absolute',
                     top: '100%',
@@ -201,7 +158,7 @@ const Notifications = () => {
                     zIndex: 1000,
                     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                   }}>
-                    {allUsers.map(user => (
+                    {userSuggestions.map(user => (
                       <div
                         key={user.username}
                         onClick={() => selectUser(user.username)}
@@ -233,8 +190,8 @@ const Notifications = () => {
             </div>
 
             <div className="email-form-buttons">
-              <button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Sending..." : "Send Email"}
+              <button type="submit" disabled={sendEmailMutation.isPending}>
+                {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
               </button>
               <button type="button" onClick={() => setEmailFormOpen(false)}>Cancel</button>
             </div>
@@ -279,7 +236,9 @@ const Notifications = () => {
       )}
 
       <div className="notifications-list">
-        {items.length === 0 ? (
+        {loadingNotifications ? (
+            <p style={{ textAlign: "center", opacity: 0.6 }}>Loading notifications...</p>
+        ) : items.length === 0 ? (
           <p style={{ textAlign: "center", opacity: 0.7 }}>No notifications.</p>
         ) : items.map(n => (
           <div key={n.notificationid} className={`notification-card ${n.isRead ? 'read' : 'unread'}`}>
@@ -296,9 +255,9 @@ const Notifications = () => {
             <div className="notification-actions">
               {n.link && <Link className="btn btn-sm" to={n.link}>Open</Link>}
               {!n.isRead ? (
-                <button className="btn btn-sm" onClick={() => markRead(n.notificationid)}>Mark read</button>
+                <button className="btn btn-sm" onClick={() => markReadMutation.mutate({ id: n.notificationid, read: true })}>Mark read</button>
               ) : (
-                <button className="btn btn-sm btn-ghost" onClick={() => markUnread(n.notificationid)}>Mark unread</button>
+                <button className="btn btn-sm btn-ghost" onClick={() => markReadMutation.mutate({ id: n.notificationid, read: false })}>Mark unread</button>
               )}
             </div>
           </div>
