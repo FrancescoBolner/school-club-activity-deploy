@@ -75,6 +75,7 @@ export default function BrowseClubs() {
       {/* Top bar */}
       <div className="top-bar">
         <input
+          name="searchClubs"
           type="text"
           placeholder="Search clubs..."
           value={search}

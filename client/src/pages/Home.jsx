@@ -67,8 +67,10 @@ const Home = () => {
     })
 
     const { data: clubsData } = useQuery({
-        queryKey: ['clubs'],
-        queryFn: () => api.get("/clubs").then(res => res.data)
+        queryKey: ['clubs-all'],
+        queryFn: () => api.get("/clubs", {
+            params: { limit: 1000 }
+        }).then(res => res.data)
     })
 
     const clubColors = {}
@@ -113,6 +115,7 @@ const Home = () => {
             {isError && <div className="alert error">Unable to load events.</div>}
             <div className="top-bar">
                 <input
+                    name="searchEvents"
                     type="text"
                     placeholder="Search events, descriptions or clubs"
                     value={search}
