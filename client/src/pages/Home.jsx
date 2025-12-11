@@ -55,15 +55,28 @@ const Home = () => {
     const [orderBy, setOrderBy] = useState("startDate")
     const [order, setOrder] = useState("asc")
     const [limit, setLimit] = useState(4)
+    const [timeFilter, setTimeFilter] = useState("incoming")
     const [filterOpen, setFilterOpen] = useState(false)
 
     const { data: eventsData, isLoading, isError } = useQuery({
-        queryKey: ['events', { search, orderBy, order, page, limit }],
+        queryKey: ['events', { search, orderBy, order, page, limit, timeFilter }],
         queryFn: () => api.get("/events", {
-            params: { q: search, orderBy, order, page, limit }
+            params: { q: search, orderBy, order, page, limit, timeFilter }
         }).then(res => res.data),
         placeholderData: keepPreviousData
     })
+
+    const { data: clubsData } = useQuery({
+        queryKey: ['clubs'],
+        queryFn: () => api.get("/clubs").then(res => res.data)
+    })
+
+    const clubColors = {}
+    if (clubsData) {
+        (Array.isArray(clubsData) ? clubsData : clubsData.data || []).forEach(club => {
+            clubColors[club.clubName] = club.bannerColor || '#38bdf8'
+        })
+    }
 
     const events = eventsData?.data || eventsData || []
     const eventMeta = {
@@ -74,7 +87,14 @@ const Home = () => {
 
     useEffect(() => {
         setPage(1)
-    }, [search, orderBy, order, limit])
+    }, [search, orderBy, order, limit, timeFilter])
+
+    const isEventIncoming = (event) => {
+        const now = new Date()
+        const start = new Date(event.startDate)
+        const end = event.endDate ? new Date(event.endDate) : null
+        return start > now || (end && end > now)
+    }
 
     // Render clubs and events
     return (
@@ -102,6 +122,14 @@ const Home = () => {
             </div>
             {filterOpen && (
                 <div className="filter-panel event-filter">
+                    <label>
+                        Show:
+                        <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}>
+                            <option value="all">All</option>
+                            <option value="incoming">Incoming</option>
+                            <option value="past">Past</option>
+                        </select>
+                    </label>
                     <label>
                         Order by:
                         <select value={orderBy} onChange={(e) => setOrderBy(e.target.value)}>
@@ -131,13 +159,15 @@ const Home = () => {
             <div className="events">
                 {isLoading && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading events...</p>}
                 {events.map((event) => (
-                    <div className="event elevated" key={event.eventid}>
+                    <div className="event elevated" key={event.eventid} style={{borderLeftColor: clubColors[event.clubName] || '#38bdf8'}}>
                         <div className="event-header">
                             <div>
                                 <div className="eyebrow">Hosted by {event.clubName}</div>
                                 <h2>{event.title}</h2>
                                 <div className="event-meta">
-                                    <span className="pill soft">Incoming</span>
+                                    <span className={`pill soft ${isEventIncoming(event) ? '' : 'neutral'}`}>
+                                        {isEventIncoming(event) ? 'Incoming' : 'Past'}
+                                    </span>
                                     <span className="event-date">{formatDateRange(event.startDate, event.endDate)}</span>
                                 </div>
                             </div>
@@ -146,10 +176,6 @@ const Home = () => {
                             </button>
                         </div>
                         <p className="event-description">{event.description}</p>
-                        <div className="event-footer">
-                            <div className="event-tag">Starts {new Date(event.startDate).toLocaleDateString('en-GB')}</div>
-                            {event.endDate && <div className="event-tag neutral">Ends {new Date(event.endDate).toLocaleDateString('en-GB')}</div>}
-                        </div>
                     </div>
                 ))}
             </div>

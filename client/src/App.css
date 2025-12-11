@@ -485,6 +485,7 @@ form button {
   margin: 0;
   font-size: 1.25rem;
   color: var(--text-strong);
+  text-align: left;
 }
 
 .event-header .event-date,

@@ -313,9 +313,11 @@ const ClubPage = () => {
                         <div className="event-header">
                             <div>
                                 <div className="event-meta">
-                                    <span className={`pill soft ${event.accepted ? 'success' : 'warning'}`}>
-                                        {event.accepted ? 'Accepted' : 'Pending approval'}
-                                    </span>
+                                    {isLeader && (
+                                        <span className={`pill soft ${event.accepted ? 'success' : 'warning'}`}>
+                                            {event.accepted ? 'Accepted' : 'Pending approval'}
+                                        </span>
+                                    )}
                                     <span className="event-date">{formatDateRange(event.startDate, event.endDate)}</span>
                                 </div>
                                 <h2>{event.title}</h2>
@@ -327,10 +329,6 @@ const ClubPage = () => {
                             )}
                         </div>
                         <p className="event-description">{event.description}</p>
-                        <div className="event-footer">
-                            <div className="event-tag">Starts {new Date(event.startDate).toLocaleDateString('en-GB')}</div>
-                            {event.endDate && <div className="event-tag neutral">Ends {new Date(event.endDate).toLocaleDateString('en-GB')}</div>}
-                        </div>
                         <div className="actions">
                             {!event.accepted && isLeader && (<button onClick={() => eventActionMutation.mutate({ url: "/event/" + event.eventid, method: "put" })}>Accept Event</button>)}
                             {isAdmin && (<button className="deletebtn" onClick={() => eventActionMutation.mutate({ url: "/event/" + event.eventid, method: "delete" })}>Delete Event</button>)}

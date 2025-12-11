@@ -267,10 +267,18 @@ app.get('/events', requireAuth, async (req, res) => {
     'startDate'
   )
   const like = `%${search}%`
+  const timeFilter = req.query.timeFilter
+  let timeClause = ''
+  if (timeFilter === 'incoming') {
+    timeClause = ' AND (startDate > NOW() OR (endDate IS NOT NULL AND endDate > NOW()))'
+  } else if (timeFilter === 'past') {
+    timeClause = ' AND startDate <= NOW() AND (endDate IS NULL OR endDate <= NOW())'
+  }
+  
   try {
     const [rows] = await dbp.query(
       `SELECT * FROM events 
-       WHERE accepted = 1 AND (startDate > NOW() OR (endDate IS NOT NULL AND endDate > NOW()))
+       WHERE accepted = 1${timeClause}
          AND (title LIKE ? OR description LIKE ? OR clubName LIKE ?)
        ORDER BY ${orderKey} ${direction}
        LIMIT ? OFFSET ?`,
@@ -278,7 +286,7 @@ app.get('/events', requireAuth, async (req, res) => {
     )
     const [[{ total }]] = await dbp.query(
       `SELECT COUNT(*) AS total FROM events 
-       WHERE accepted = 1 AND (startDate > NOW() OR (endDate IS NOT NULL AND endDate > NOW()))
+       WHERE accepted = 1${timeClause}
          AND (title LIKE ? OR description LIKE ? OR clubName LIKE ?)`,
       [like, like, like]
     )
