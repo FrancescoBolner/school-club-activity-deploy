@@ -15,7 +15,7 @@ const JoinClub = () => {
 
     // Get club name from URL
     const location = useLocation()
-    const clubName = location.pathname.split("/")[2]
+    const clubName = decodeURIComponent(location.pathname.split("/")[2])
 
     // Handle input changes and update state
     const handleChange = (e) => {

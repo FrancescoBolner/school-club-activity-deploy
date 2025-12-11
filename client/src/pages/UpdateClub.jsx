@@ -7,7 +7,7 @@ import api from "../api"
 import { getSession } from "../utils/auth"
 
 const UpdateClub = () => {
-    const clubName = useLocation().pathname.split("/")[2]
+    const clubName = decodeURIComponent(useLocation().pathname.split("/")[2])
     const session = getSession()
     const navigate = useNavigate()
     const queryClient = useQueryClient()

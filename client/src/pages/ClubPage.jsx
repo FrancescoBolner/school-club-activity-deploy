@@ -50,7 +50,7 @@ const downloadICS = (event) => {
 
 const ClubPage = () => {
     const location = useLocation()
-    const clubName = location.pathname.split("/")[2]
+    const clubName = decodeURIComponent(location.pathname.split("/")[2])
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const session = getSession()
@@ -62,7 +62,9 @@ const ClubPage = () => {
     
     const [newComment, setNewComment] = useState({ comment: "", rating: 0 })
 
-    const isAdmin = useMemo(() => session && ['CL', 'VP'].includes(session.role) && session.club === clubName, [session, clubName])
+    const isAdmin = useMemo(() => {
+        return session && ['CL', 'VP'].includes(session.role) && session.club === clubName
+    }, [session, clubName])
     const isLeader = useMemo(() => session && session.role === 'CL' && session.club === clubName, [session, clubName])
     const isMember = useMemo(() => session && session.club === clubName && ['CL','VP','CM'].includes(session.role), [session, clubName])
     const isPending = useMemo(() => session && session.club === clubName && session.role === 'STU', [session, clubName])

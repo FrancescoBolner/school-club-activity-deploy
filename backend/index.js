@@ -530,7 +530,7 @@ app.put('/event/:eventid', requireAuth, requireRoles('CL'), async (req, res) => 
 // Update club details (only CL can change description and memberMax)
 app.post('/updateClub/:clubName', requireAuth, requireRoles('CL'), requireClubMatch(req => req.params.clubName), async (req, res) => {
   const clubName = req.params.clubName
-  const { description, memberMax } = req.body
+  const { description, memberMax, bannerImage, bannerColor } = req.body
   if (!memberMax) return res.status(400).json({ message: 'Missing fields' })
   const maxMembers = Number(memberMax)
   if (Number.isNaN(maxMembers) || maxMembers < 1) return res.status(400).json({ message: 'memberMax must be positive' })
@@ -540,11 +540,10 @@ app.post('/updateClub/:clubName', requireAuth, requireRoles('CL'), requireClubMa
     if (rows.length === 0) return res.status(404).json({ message: 'Club not found' })
     if (rows[0].memberCount > maxMembers) return res.status(400).json({ message: 'Member max cannot be below current members' })
 
-    if (description) {
-      await dbp.query('UPDATE clubs SET description = ?, memberMax = ? WHERE clubName = ?', [description, maxMembers, clubName])
-    } else {
-      await dbp.query('UPDATE clubs SET memberMax = ? WHERE clubName = ?', [maxMembers, clubName])
-    }
+    await dbp.query(
+      'UPDATE clubs SET description = ?, memberMax = ?, bannerImage = ?, bannerColor = ? WHERE clubName = ?',
+      [description || '', maxMembers, bannerImage || '', bannerColor || '#38bdf8', clubName]
+    )
     return res.status(201).json({ message: "Club updated successfully" })
   } catch (err) {
     console.error('Update club failed', err)

@@ -7,7 +7,7 @@ import { getSession } from "../utils/auth"
 const CommentPage = () => {
     // Get club name from URL
     const location = useLocation()
-    const clubName = location.pathname.split("/")[2]
+    const clubName = decodeURIComponent(location.pathname.split("/")[2])
 
     const session = getSession()
 
