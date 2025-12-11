@@ -29,15 +29,11 @@ const CreateClub = () => {
         e.preventDefault() // Prevent default form submission behavior
         try {
             if (!session) {
-                alert("Login as CL/VP to create a club.")
-                return
-            }
-            if (!['CL', 'VP'].includes(session.role)) {
-                alert("Only CL/VP roles can create clubs.")
+                alert("Login to create a club.")
                 return
             }
             if (session.club) {
-                alert("Leave your current club before creating a new one.")
+                alert("You must not be enrolled in any club to create a new one.")
                 return
             }
             // Send POST request to backend to create club

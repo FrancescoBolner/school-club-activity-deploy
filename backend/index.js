@@ -179,12 +179,16 @@ app.get('/events/:clubName', requireAuth, async (req, res) => {
   const like = `%${search}%`
 
   try {
+    // Only CL can see unaccepted events
+    const isClubLeader = req.user.role === 'CL' && req.user.club === clubName
+    const acceptedFilter = isClubLeader ? '' : ' AND accepted = 1'
+    
     const [rows] = await dbp.query(
-      `SELECT * FROM events WHERE clubName = ? AND (title LIKE ? OR description LIKE ?) ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
+      `SELECT * FROM events WHERE clubName = ? AND (title LIKE ? OR description LIKE ?)${acceptedFilter} ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
       [clubName, like, like, limit, offset]
     )
     const [[{ total }]] = await dbp.query(
-      'SELECT COUNT(*) AS total FROM events WHERE clubName = ? AND (title LIKE ? OR description LIKE ?)',
+      `SELECT COUNT(*) AS total FROM events WHERE clubName = ? AND (title LIKE ? OR description LIKE ?)${acceptedFilter}`,
       [clubName, like, like]
     )
 
@@ -349,10 +353,10 @@ app.get('/session', requireAuth, async (req, res) => {
 })
 
 // Create a new club
-app.post('/createClub', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
-  const { clubName, description, memberMax } = req.body
+app.post('/createClub', requireAuth, requireRoles('STU'), async (req, res) => {
+  const { clubName, description, memberMax, bannerImage, bannerColor } = req.body
   if (!clubName || !description || !memberMax) return res.status(400).json({ message: 'Missing club fields' })
-  if (req.user.club) return res.status(400).json({ message: 'Leave your current club before creating a new one' })
+  if (req.user.club) return res.status(400).json({ message: 'You must not be enrolled in any club to create a new one' })
   const maxMembers = Number(memberMax)
   if (Number.isNaN(maxMembers) || maxMembers < 1) return res.status(400).json({ message: 'memberMax must be a positive number' })
 
@@ -361,12 +365,12 @@ app.post('/createClub', requireAuth, requireRoles('CL', 'VP'), async (req, res) 
     if (exists.length > 0) return res.status(400).json({ message: 'Club already exists' })
 
     await dbp.query(
-      'INSERT INTO clubs (clubName, description, memberCount, memberMax) VALUES (?, ?, ?, ?)',
-      [clubName, description, 1, maxMembers]
+      'INSERT INTO clubs (clubName, description, memberCount, memberMax, bannerImage, bannerColor) VALUES (?, ?, ?, ?, ?, ?)',
+      [clubName, description, 1, maxMembers, bannerImage || '', bannerColor || '#38bdf8']
     )
     await dbp.query('UPDATE person SET role = ?, club = ? WHERE username = ?', ['CL', clubName, req.user.username])
 
-    return res.status(201).json({ message: 'Club added successfully' })
+    return res.status(201).json({ message: 'Club added successfully', sessionUpdate: { role: 'CL', club: clubName } })
   } catch (err) {
     console.error('Create club failed', err)
     return res.status(500).json({ message: 'Failed to create club' })
@@ -396,12 +400,17 @@ app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch
   if (!title || !description || !startDate || !clubName) return res.status(400).json({ message: 'Missing event fields' })
 
   try {
+    // Convert datetime-local format to MySQL datetime format
+    const formatDate = (date) => date ? date.replace('T', ' ') + ':00' : null
+    const formattedStartDate = formatDate(startDate)
+    const formattedEndDate = endDate && endDate !== '' ? formatDate(endDate) : null
+    
     await dbp.query(
       'INSERT INTO events (title, description, startDate, endDate, clubName) VALUES (?, ?, ?, ?, ?)',
-      [title, description, startDate, endDate === '' ? null : endDate, clubName]
+      [title, description, formattedStartDate, formattedEndDate, clubName]
     )
     
-    // Notify all club members about the new event
+    // Notify club leader about the new event
     const [members] = await dbp.query(
       "SELECT username FROM person WHERE club = ? AND role = 'CL'",
       [clubName]
@@ -410,7 +419,7 @@ app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch
       await createNotification({
         username: member.username,
         clubName: clubName,
-        type: 'membership',
+        type: 'event',
         message: `New event "${title}" has been created for ${clubName}`,
         link: `/ClubPage/${clubName}`
       })
@@ -419,7 +428,7 @@ app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch
     return res.json({ message: 'Event added successfully' })
   } catch (err) {
     console.error('Create event failed', err)
-    return res.status(500).json({ message: 'Failed to create event' })
+    return res.status(500).json({ message: 'Failed to create event', error: err.message })
   }
 })
 
@@ -495,7 +504,7 @@ app.put('/event/:eventid', requireAuth, requireRoles('CL'), async (req, res) => 
       await createNotification({
         username: member.username,
         clubName: clubName,
-        type: 'membership',
+        type: 'event',
         message: `Event "${eventTitle}" has been created for ${clubName}`,
         link: `/ClubPage/${clubName}`
       })
@@ -625,6 +634,31 @@ app.delete('/cancelJoinRequest', requireAuth, async (req, res) => {
   }
 })
 
+// Quit club (for CM and VP members)
+app.delete('/quitClub', requireAuth, async (req, res) => {
+  try {
+    const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [req.user.username])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (!rows[0].club) {
+      return res.status(400).json({ message: 'You are not in a club' })
+    }
+    if (rows[0].role === 'CL') {
+      return res.status(403).json({ message: 'Club Leaders cannot quit. You have to delete the club.' })
+    }
+    if (rows[0].role === 'STU') {
+      return res.status(400).json({ message: 'Use cancel join request instead' })
+    }
+
+    const clubName = rows[0].club
+    await dbp.query("UPDATE person SET club = NULL, role = 'STU' WHERE username = ?", [req.user.username])
+    await recalcMemberCount(clubName)
+    return res.json({ message: "Successfully quit the club", sessionUpdate: { club: null, role: 'STU' } })
+  } catch (err) {
+    console.error('Quit club failed', err)
+    return res.status(500).json({ message: 'Failed to quit club' })
+  }
+})
+
 // Promote a member to VP or demote VP to CM by username
 app.put('/promote/:username', requireAuth, requireRoles('CL'), async (req, res) => {
   const username = req.params.username
@@ -661,14 +695,16 @@ app.get('/notifications', requireAuth, async (req, res) => {
     'createdAt'
   )
   const like = `%${search}%`
+  const unreadFilter = req.query.unread === 'true' ? ' AND isRead = 0' : ''
+  
   try {
     const [rows] = await dbp.query(
-      `SELECT * FROM notifications WHERE username = ? AND (message LIKE ? OR type LIKE ?)
+      `SELECT * FROM notifications WHERE username = ? AND (message LIKE ? OR type LIKE ?)${unreadFilter}
        ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
       [req.user.username, like, like, limit, offset]
     )
     const [[{ total }]] = await dbp.query(
-      'SELECT COUNT(*) AS total FROM notifications WHERE username = ? AND (message LIKE ? OR type LIKE ?)',
+      `SELECT COUNT(*) AS total FROM notifications WHERE username = ? AND (message LIKE ? OR type LIKE ?)${unreadFilter}`,
       [req.user.username, like, like]
     )
     return res.json({ data: rows, page, pages: Math.ceil(total / limit) || 1, total })
@@ -765,6 +801,21 @@ app.get('/clubMembers', requireAuth, requireRoles('CL', 'VP', 'CM'), async (req,
   } catch (err) {
     console.error('Fetch club members failed', err)
     return res.status(500).json({ message: 'Failed to fetch club members' })
+  }
+})
+
+app.get('/allUsers', requireAuth, async (req, res) => {
+  try {
+    const search = req.query.q || ''
+    const like = `%${search}%`
+    const [users] = await dbp.query(
+      "SELECT username, role, club FROM person WHERE username LIKE ? ORDER BY username LIMIT 5",
+      [like]
+    )
+    return res.json(users)
+  } catch (err) {
+    console.error('Fetch users failed', err)
+    return res.status(500).json({ message: 'Failed to fetch users' })
   }
 })
 

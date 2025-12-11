@@ -198,6 +198,19 @@ const ClubPage = () => {
         }
     }
 
+    const handleQuit = async (username) => {
+        if (!isMember || username !== session?.username) return alert("Not allowed to quit club.")
+        if (window.confirm('Are you sure you want to quit this club?')) {
+            try {
+                await api.delete("/quitClub")
+                await Promise.all([fetchMembers(), fetchClub()])
+                if (username === session?.username) navigate("../")
+            } catch (err) {
+                alert(err.response?.data?.message || "Unable to quit club")
+            }
+        }
+    }
+
     const handleDeleteEvent = async (eventid) => {
         if (!isAdmin) return alert("You must be a CL/VP of this club.")
         try {
@@ -652,7 +665,7 @@ const ClubPage = () => {
                         }}>Cancel Request</button>
                     </>
                 )}
-                {isMember && !isLeader && <button className="deletebtn" onClick={() => handleExpell(session.username)}>Quit club</button>}
+                {isMember && !isLeader && <button className="deletebtn" onClick={() => handleQuit(session.username)}>Quit club</button>}
                 {isLeader && <button className="deletebtn" onClick={() => handleDeleteClub(clubName)}>Delete Club</button>}
             </div>
         </div>

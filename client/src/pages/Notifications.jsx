@@ -16,6 +16,8 @@ const Notifications = () => {
   const [emailFormOpen, setEmailFormOpen] = useState(false)
   const [emailForm, setEmailForm] = useState({ recipient: "", message: "", sendToAllClub: false })
   const [clubMembers, setClubMembers] = useState([])
+  const [allUsers, setAllUsers] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const isAdmin = useMemo(() => session && ['CL', 'VP'].includes(session.role), [session?.role])
 
@@ -26,15 +28,17 @@ const Notifications = () => {
   const fetchNotifications = async (page = filters.page) => {
     if (!session) return
     try {
-      const res = await api.get("/notifications", {
-        params: {
-          q: filters.search,
-          orderBy: filters.orderBy,
-          order: filters.order,
-          limit: filters.limit,
-          page
-        }
-      })
+      const params = {
+        q: filters.search,
+        orderBy: filters.orderBy,
+        order: filters.order,
+        limit: filters.limit,
+        page
+      }
+      if (filters.unread === 'unread') {
+        params.unread = true
+      }
+      const res = await api.get("/notifications", { params })
       const payload = res.data.data ? res.data.data : res.data
       setItems(payload)
       setMeta({
@@ -63,6 +67,31 @@ const Notifications = () => {
     } catch (err) {
       console.error(err)
     }
+  }
+
+  const fetchUserSuggestions = async (search) => {
+    if (!search || search.length < 1) {
+      setAllUsers([])
+      return
+    }
+    try {
+      const res = await api.get("/allUsers", { params: { q: search } })
+      setAllUsers(res.data)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleRecipientChange = (value) => {
+    setEmailForm({ ...emailForm, recipient: value })
+    fetchUserSuggestions(value)
+    setShowSuggestions(true)
+  }
+
+  const selectUser = (username) => {
+    setEmailForm({ ...emailForm, recipient: username })
+    setShowSuggestions(false)
+    setAllUsers([])
   }
 
   const handleSendEmail = async (e) => {
@@ -146,18 +175,49 @@ const Notifications = () => {
             )}
             
             {!emailForm.sendToAllClub && (
-              <div>
+              <div style={{ position: 'relative' }}>
                 <label>Recipient:</label>
-                <select
+                <input
+                  type="text"
                   value={emailForm.recipient}
-                  onChange={(e) => setEmailForm({ ...emailForm, recipient: e.target.value })}
+                  onChange={(e) => handleRecipientChange(e.target.value)}
+                  onFocus={() => emailForm.recipient && setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  placeholder="Type username..."
                   required={!emailForm.sendToAllClub}
-                >
-                  <option value="">Select a member...</option>
-                  {clubMembers.map(m => (
-                    <option key={m.username} value={m.username}>{m.username} ({m.role})</option>
-                  ))}
-                </select>
+                  autoComplete="off"
+                />
+                {showSuggestions && allUsers.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'white',
+                    border: '1px solid #ccc',
+                    borderRadius: '4px',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    zIndex: 1000,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  }}>
+                    {allUsers.map(user => (
+                      <div
+                        key={user.username}
+                        onClick={() => selectUser(user.username)}
+                        style={{
+                          padding: '8px 12px',
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #eee'
+                        }}
+                        onMouseEnter={(e) => e.target.style.backgroundColor = '#f0f0f0'}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
+                      >
+                        {user.username} ({user.role}{user.club ? ` - ${user.club}` : ''})
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -198,6 +258,13 @@ const Notifications = () => {
             <select value={filters.order} onChange={(e) => updateFilter("order", e.target.value)}>
               <option value="desc">Newest</option>
               <option value="asc">Oldest</option>
+            </select>
+          </label>
+          <label>
+            Show:
+            <select value={filters.unread || 'all'} onChange={(e) => updateFilter("unread", e.target.value === 'all' ? undefined : e.target.value)}>
+              <option value="all">All</option>
+              <option value="unread">Unread only</option>
             </select>
           </label>
           <label>
