@@ -165,6 +165,21 @@ const ClubPage = () => {
         onError: (err) => alert(err.response?.data?.message || "Action failed")
     })
 
+    const transferLeadershipMutation = useMutation({
+        mutationFn: (username) => api.put(`/transferLeadership/${username}`),
+        onSuccess: (response) => {
+            queryClient.invalidateQueries(['members', clubName])
+            if (response.data.sessionUpdate) {
+                const currSession = getSession()
+                const updated = { ...currSession, ...response.data.sessionUpdate }
+                localStorage.setItem('session', JSON.stringify(updated))
+                window.dispatchEvent(new Event('sca:session-change'))
+            }
+            alert(response.data.message || 'Leadership transferred successfully')
+        },
+        onError: (err) => alert(err.response?.data?.message || 'Failed to transfer leadership')
+    })
+
     const eventActionMutation = useMutation({
         mutationFn: ({ url, method }) => api[method](url),
         onSuccess: () => queryClient.invalidateQueries(['events', clubName]),
@@ -195,6 +210,16 @@ const ClubPage = () => {
         }, {
             onSuccess: () => setNewComment({ comment: "", rating: 0 })
         })
+    }
+
+    const handleTransferLeadership = (e) => {
+        const selectedUsername = e.target.value
+        if (!selectedUsername || selectedUsername === '') return
+        
+        if (window.confirm(`Are you sure you want to transfer leadership to ${selectedUsername}? You will become Vice President.`)) {
+            transferLeadershipMutation.mutate(selectedUsername)
+        }
+        e.target.value = '' // Reset selection
     }
 
     const acceptedEvents = useMemo(() => events.filter(e => e.accepted), [events])
@@ -403,6 +428,25 @@ const ClubPage = () => {
                                     <td style={{ fontWeight: p.username === session?.username ? 700 : 400 }}>{p.username}</td>
                                     <td style={{ fontWeight: p.username === session?.username ? 700 : 400 }}>{p.role}</td>
                                     <td>
+                                        {isLeader && p.role === "CL" && (
+                                            <select 
+                                                onChange={handleTransferLeadership}
+                                                defaultValue=""
+                                                style={{ 
+                                                    padding: "0.25rem 0.5rem",
+                                                    fontSize: "0.85rem",
+                                                    border: "1px solid #cbd5e1",
+                                                    cursor: "pointer",
+                                                    marginBottom: "0px"
+                                                }}
+                                                title="Transfer leadership"
+                                            >
+                                                <option value="" disabled>Transfer leadership...</option>
+                                                {person.filter(member => member.role !== "STU" && member.role !== "CL").map(member => (
+                                                    <option key={member.username} value={member.username}>{member.username}</option>
+                                                ))}
+                                            </select>
+                                        )}
                                         {isLeader && (
                                             <>
                                                 {p.role === "CM" && (<button onClick={() => memberActionMutation.mutate({ url: "/promote/" + p.username, body: { action: 'promote' } })} title="Promote to VP">▲</button>)}

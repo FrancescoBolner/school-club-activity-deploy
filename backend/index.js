@@ -749,6 +749,40 @@ app.put('/promote/:username', requireAuth, requireRoles('CL'), async (req, res) 
   }
 })
 
+// Transfer club leadership (CL only)
+app.put('/transferLeadership/:username', requireAuth, requireRoles('CL'), async (req, res) => {
+  const newLeaderUsername = req.params.username
+  console.log(`PUT /transferLeadership/${newLeaderUsername} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [newLeaderUsername])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (!req.user.club || req.user.club !== rows[0].club) return res.status(400).json({ message: 'User must be in your club' })
+    if (!['CM', 'VP'].includes(rows[0].role)) return res.status(400).json({ message: 'User must be a club member (CM or VP)' })
+    if (newLeaderUsername === req.user.username) return res.status(400).json({ message: 'Cannot transfer leadership to yourself' })
+
+    const clubName = req.user.club
+    
+    // Transfer leadership: new leader becomes CL, old leader becomes VP
+    await dbp.query("UPDATE person SET role = 'CL' WHERE username = ?", [newLeaderUsername])
+    await dbp.query("UPDATE person SET role = 'VP' WHERE username = ?", [req.user.username])
+    
+    await createNotification({ 
+      username: newLeaderUsername, 
+      clubName: clubName, 
+      type: 'membership', 
+      message: `You are now the Club Leader of ${clubName}` 
+    })
+    
+    return res.json({ 
+      message: "Leadership transferred successfully", 
+      sessionUpdate: { role: 'VP' } 
+    })
+  } catch (err) {
+    console.error('Transfer leadership failed', err)
+    return res.status(500).json({ message: 'Failed to transfer leadership' })
+  }
+})
+
 // Notifications
 app.get('/notifications', requireAuth, async (req, res) => {
   console.log(`GET /notifications - User: ${req.user?.username}, Mailbox: ${req.query.mailbox || 'inbox'}`)
