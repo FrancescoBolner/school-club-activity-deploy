@@ -12,11 +12,11 @@ const Notifications = () => {
   const session = getSession()
   const queryClient = useQueryClient()
   
-  const [filters, setFilters] = useState({ search: "", orderBy: "created", order: "desc", page: 1, limit: 6, unread: 'all' })
+  const [filters, setFilters] = useState({ search: "", orderBy: "created", order: "desc", page: 1, limit: 6, unread: 'all', mailbox: 'inbox' })
   const [filterOpen, setFilterOpen] = useState(false)
   
   const [emailFormOpen, setEmailFormOpen] = useState(false)
-  const [emailForm, setEmailForm] = useState({ recipient: "", message: "", sendToAllClub: false, type: "email" })
+  const [emailForm, setEmailForm] = useState({ recipient: "", message: "", sendToAllClub: false, type: "email", link: "", linkToClub: false })
   const [recipientSearch, setRecipientSearch] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
 
@@ -31,7 +31,8 @@ const Notifications = () => {
             orderBy: filters.orderBy,
             order: filters.order,
             limit: filters.limit,
-            page: filters.page
+            page: filters.page,
+            mailbox: filters.mailbox
         }
         if (filters.unread === 'unread') params.unread = true
         return api.get("/notifications", { params }).then(res => res.data)
@@ -60,7 +61,7 @@ const Notifications = () => {
     mutationFn: (data) => api.post("/sendEmail", data),
     onSuccess: () => {
         alert(emailForm.sendToAllClub ? "Email sent to all club members!" : "Email sent successfully!")
-        setEmailForm({ recipient: "", message: "", sendToAllClub: false, type: "email" })
+        setEmailForm({ recipient: "", message: "", sendToAllClub: false, type: "email", link: "", linkToClub: false })
         setRecipientSearch("")
         setEmailFormOpen(false)
         queryClient.invalidateQueries(['notifications'])
@@ -97,7 +98,22 @@ const Notifications = () => {
     if (!emailForm.message) return alert("Message is required")
     if (!emailForm.sendToAllClub && !emailForm.recipient) return alert("Please select a recipient or choose to send to all club members")
     
-    sendEmailMutation.mutate(emailForm)
+    // Prepare the data to send
+    const emailData = {
+      recipient: emailForm.recipient,
+      message: emailForm.message,
+      sendToAllClub: emailForm.sendToAllClub,
+      type: emailForm.type
+    }
+    
+    // Add link if provided or if linking to club
+    if (emailForm.linkToClub && session?.club) {
+      emailData.link = `/ClubPage/${encodeURIComponent(session.club)}`
+    } else if (emailForm.link) {
+      emailData.link = emailForm.link
+    }
+    
+    sendEmailMutation.mutate(emailData)
   }
 
   if (!session) return <p style={{ textAlign: "center" }}>Login to view notifications.</p>
@@ -112,8 +128,16 @@ const Notifications = () => {
           value={filters.search}
           onChange={(e) => updateFilter("search", e.target.value)}
         />
-        <button onClick={() => setFilterOpen(!filterOpen)}>≡</button>
-        <button onClick={() => setEmailFormOpen(!emailFormOpen)}>✉</button>
+        <select 
+          value={filters.mailbox} 
+          onChange={(e) => updateFilter("mailbox", e.target.value)}
+        >
+          <option value="inbox">Inbox</option>
+          <option value="sent">Sent</option>
+          <option value="all">All</option>
+        </select>
+        <button onClick={() => { setFilterOpen(!filterOpen); setEmailFormOpen(false); }}>≡</button>
+        <button onClick={() => { setEmailFormOpen(!emailFormOpen); setFilterOpen(false); }}>✉</button>
       </div>
 
       {/* Email Form */}
@@ -206,6 +230,31 @@ const Notifications = () => {
               />
             </div>
 
+            {isAdmin && session?.club && (
+              <div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={emailForm.linkToClub}
+                    onChange={(e) => setEmailForm({ ...emailForm, linkToClub: e.target.checked, link: e.target.checked ? "" : emailForm.link })}
+                  />
+                  Link to club page
+                </label>
+              </div>
+            )}
+
+            {!emailForm.linkToClub && (
+              <div>
+                <label>Link (optional):</label>
+                <input
+                  type="text"
+                  value={emailForm.link}
+                  onChange={(e) => setEmailForm({ ...emailForm, link: e.target.value })}
+                  placeholder="External URL"
+                />
+              </div>
+            )}
+
             <div className="email-form-buttons">
               <button type="submit" disabled={sendEmailMutation.isPending}>
                 {sendEmailMutation.isPending ? "Sending..." : "Send Email"}
@@ -257,28 +306,43 @@ const Notifications = () => {
             <p style={{ textAlign: "center", opacity: 0.6 }}>Loading notifications...</p>
         ) : items.length === 0 ? (
           <p style={{ textAlign: "center", opacity: 0.7 }}>No notifications.</p>
-        ) : items.map(n => (
-          <div key={n.notificationid} className={`notification-card ${n.isRead ? 'read' : 'unread'}`}>
+        ) : items.map(n => {
+          const isSent = n.senderUsername === session?.username
+          return (
+          <div key={n.notificationid} className={`notification-card ${(isSent || n.isRead) ? 'read' : 'unread'}`}>
             <div className="notification-head">
-              <span className="badge" style={{ backgroundColor: n.isRead ? undefined : 'red', color: n.isRead ? undefined : 'white' }}>{n.type}</span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <span className="badge" style={{ backgroundColor: isSent ? '#6366f1' : '#10b981', color: 'white' }}>
+                  {isSent ? 'Sent' : 'Received'}
+                </span>
+                <span className="badge" style={{ backgroundColor: (!isSent && !n.isRead) ? 'red' : undefined, color: (!isSent && !n.isRead) ? 'white' : undefined }}>{n.type}</span>
+              </div>
               <span className="notification-date">{new Date(n.createdAt).toLocaleString('en-GB')}</span>
             </div>
-            {n.senderUsername && (
+            {n.senderUsername && !isSent && (
               <div className="notification-sender">From: {n.senderUsername}</div>
+            )}
+            {isSent && n.recipientCount > 1 && (
+              <div className="notification-sender">To: {n.recipientCount} recipients in {n.clubName}</div>
+            )}
+            {isSent && n.recipientCount === 1 && (
+              <div className="notification-sender">To: {n.username}</div>
             )}
             <div className="notification-body">
               {n.message}
             </div>
             <div className="notification-actions">
               {n.link && <Link className="btn btn-sm" to={n.link}>Open</Link>}
-              {!n.isRead ? (
-                <button className="btn btn-sm" onClick={() => markReadMutation.mutate({ id: n.notificationid, read: true })}>Mark read</button>
-              ) : (
-                <button className="btn btn-sm btn-ghost" onClick={() => markReadMutation.mutate({ id: n.notificationid, read: false })}>Mark unread</button>
+              {!isSent && (
+                !n.isRead ? (
+                  <button className="btn btn-sm" onClick={() => markReadMutation.mutate({ id: n.notificationid, read: true })}>Mark read</button>
+                ) : (
+                  <button className="btn btn-sm btn-ghost" onClick={() => markReadMutation.mutate({ id: n.notificationid, read: false })}>Mark unread</button>
+                )
               )}
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       <div className="pagination">

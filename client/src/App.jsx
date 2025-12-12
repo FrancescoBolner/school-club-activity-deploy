@@ -126,7 +126,7 @@ function AppContent({ session, unread, handleLogout }) {
           <div className="nav-actions">
             {session ? (
               <>
-                <span className="user-chip">{session.username} ({session.role}{session.club ? ` · ${session.club}` : ""})</span>
+                <span className="user-chip">{session.username} <span className="user-chip-info">({session.role}{session.club ? ` · ${session.club}` : ""})</span></span>
                 <button className="ghost" onClick={handleLogout}>Logout</button>
               </>
             ) : (

@@ -733,17 +733,92 @@ app.get('/notifications', requireAuth, async (req, res) => {
   )
   const like = `%${search}%`
   const unreadFilter = req.query.unread === 'true' ? ' AND isRead = 0' : ''
+  const mailbox = req.query.mailbox || 'inbox'
   
   try {
-    const [rows] = await dbp.query(
-      `SELECT * FROM notifications WHERE username = ? AND (message LIKE ? OR type LIKE ?)${unreadFilter}
-       ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
-      [req.user.username, like, like, limit, offset]
-    )
-    const [[{ total }]] = await dbp.query(
-      `SELECT COUNT(*) AS total FROM notifications WHERE username = ? AND (message LIKE ? OR type LIKE ?)${unreadFilter}`,
-      [req.user.username, like, like]
-    )
+    let rows, total
+    
+    if (mailbox === 'sent') {
+      // Show sent emails - group club-wide emails by message to show only once
+      const [sentRows] = await dbp.query(
+        `SELECT 
+          MIN(notificationid) as notificationid,
+          MIN(username) as username,
+          senderUsername,
+          clubName,
+          type,
+          message,
+          MIN(link) as link,
+          MIN(isRead) as isRead,
+          MAX(createdAt) as createdAt,
+          COUNT(*) as recipientCount
+         FROM notifications 
+         WHERE senderUsername = ? AND (message LIKE ? OR type LIKE ?)
+         GROUP BY senderUsername, message, clubName, type
+         ORDER BY createdAt ${direction} LIMIT ? OFFSET ?`,
+        [req.user.username, like, like, limit, offset]
+      )
+      const [[{ total: sentTotal }]] = await dbp.query(
+        `SELECT COUNT(*) AS total FROM (
+          SELECT 1 FROM notifications 
+          WHERE senderUsername = ? AND (message LIKE ? OR type LIKE ?)
+          GROUP BY senderUsername, message, clubName, type
+        ) AS grouped`,
+        [req.user.username, like, like]
+      )
+      rows = sentRows
+      total = sentTotal
+    } else if (mailbox === 'all') {
+      // Show both inbox and sent (inbox items + grouped sent items)
+      const [inboxRows] = await dbp.query(
+        `SELECT *, 1 as recipientCount FROM notifications 
+         WHERE username = ? AND (message LIKE ? OR type LIKE ?)${unreadFilter}
+         ORDER BY createdAt ${direction}`,
+        [req.user.username, like, like]
+      )
+      const [sentRows] = await dbp.query(
+        `SELECT 
+          MIN(notificationid) as notificationid,
+          MIN(username) as username,
+          senderUsername,
+          clubName,
+          type,
+          message,
+          MIN(link) as link,
+          MIN(isRead) as isRead,
+          MAX(createdAt) as createdAt,
+          COUNT(*) as recipientCount
+         FROM notifications 
+         WHERE senderUsername = ? AND (message LIKE ? OR type LIKE ?)
+         GROUP BY senderUsername, message, clubName, type
+         ORDER BY createdAt ${direction}`,
+        [req.user.username, like, like]
+      )
+      // Combine and sort
+      const combined = [...inboxRows, ...sentRows].sort((a, b) => {
+        const aVal = new Date(a.createdAt).getTime()
+        const bVal = new Date(b.createdAt).getTime()
+        return direction === 'DESC' ? bVal - aVal : aVal - bVal
+      })
+      rows = combined.slice(offset, offset + limit)
+      total = combined.length
+    } else {
+      // Default: inbox only
+      const [inboxRows] = await dbp.query(
+        `SELECT *, 1 as recipientCount FROM notifications 
+         WHERE username = ? AND (message LIKE ? OR type LIKE ?)${unreadFilter}
+         ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
+        [req.user.username, like, like, limit, offset]
+      )
+      const [[{ total: inboxTotal }]] = await dbp.query(
+        `SELECT COUNT(*) AS total FROM notifications 
+         WHERE username = ? AND (message LIKE ? OR type LIKE ?)${unreadFilter}`,
+        [req.user.username, like, like]
+      )
+      rows = inboxRows
+      total = inboxTotal
+    }
+    
     return res.json({ data: rows, page, pages: Math.ceil(total / limit) || 1, total })
   } catch (err) {
     console.error('Fetch notifications failed', err)
@@ -778,7 +853,7 @@ app.post('/notifications', requireAuth, requireRoles('CL', 'VP'), async (req, re
 })
 
 app.post('/sendEmail', requireAuth, async (req, res) => {
-  const { recipient, message, sendToAllClub, type } = req.body
+  const { recipient, message, sendToAllClub, type, link } = req.body
   if (!message) return res.status(400).json({ message: 'Message required' })
   
   // Validate notification type
@@ -803,7 +878,7 @@ app.post('/sendEmail', requireAuth, async (req, res) => {
           clubName: req.user.club,
           type: notificationType,
           message: message,
-          link: null
+          link: link || null
         })
       }
       return res.status(201).json({ message: `Email sent to ${members.length} club members` })
@@ -820,7 +895,7 @@ app.post('/sendEmail', requireAuth, async (req, res) => {
         clubName: req.user.club,
         type: 'email',
         message: message,
-        link: null
+        link: link || null
       })
       return res.status(201).json({ message: 'Email sent successfully' })
     }
@@ -849,8 +924,8 @@ app.get('/allUsers', requireAuth, async (req, res) => {
     const search = req.query.q || ''
     const like = `%${search}%`
     const [users] = await dbp.query(
-      "SELECT username, role, club FROM person WHERE username LIKE ? ORDER BY username LIMIT 5",
-      [like]
+      "SELECT username, role, club FROM person WHERE username LIKE ? AND username != ? ORDER BY username LIMIT 5",
+      [like, req.user.username]
     )
     return res.json(users)
   } catch (err) {

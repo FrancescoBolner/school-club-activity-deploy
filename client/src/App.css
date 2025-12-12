@@ -186,6 +186,13 @@ body {
   font-weight: 600;
   color: var(--text-strong);
   border: 1px solid rgba(14,165,233,0.25);
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: center;
+}
+.user-chip-info {
+  white-space: nowrap;
 }
 
 /* General Styles */
@@ -908,6 +915,11 @@ form button {
 .notification-actions > * {
   flex: 0 0 auto;
 }
+.notification-actions a {
+  padding: 0.5rem 1rem !important;
+  font-family: Arial;
+  height: 34.4px;
+}
 
 .browse-page {
   padding-bottom: 2rem;
@@ -927,6 +939,23 @@ form button {
   border-radius: var(--radius-sm);
   font-size: 0.98rem;
   margin-bottom: 0.85rem;
+  width: auto;
+}
+
+.top-bar select {
+  width: auto;
+  appearance: none;
+  border: none;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.98rem;
+  letter-spacing: 0.015em;
+  cursor: pointer;
+  background: var(--primary);
+  color: #f8fafc;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition), box-shadow var(--transition), background var(--transition);
 }
 
 .filter-panel {
