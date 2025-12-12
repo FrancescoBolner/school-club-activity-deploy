@@ -255,7 +255,7 @@ INSERT INTO events (`startDate`, `endDate`, `title`, `description`, `accepted`, 
 -- ==== COMMENTS =====
 INSERT INTO comments (`date`, `comment`, `rating`, `username`, `clubName`) VALUES
 ('2026-01-11 09:23:00','Amazing slope trip! The buses were punctual and the guides helpful.',5,'Marta','Ski'),
-('2026-03-06 22:10:00','Apere-ski was a blast — the hot chocolate saved my toes!',4,'Ari','Ski'),
+('2026-03-06 22:10:00','Après-ski was a blast — the hot chocolate saved my toes!',4,'Ari','Ski'),
 ('2026-02-28 19:45:00','I loved the backcountry guidance but wish there had been an easier beginner route.',4,'Luca','Ski'),
 ('2025-02-16 17:00:00','Training camp was intense; met great people.',5,'Francesco','Ski'),
 ('2026-03-05 21:05:00','Samuele ate all my gocciole at the apres-ski table. I am NOT pleased.','1','Francesco','Ski'),

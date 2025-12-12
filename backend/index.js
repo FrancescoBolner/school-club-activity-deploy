@@ -19,6 +19,9 @@ const db = mysql.createPool({
     user: 'root',
     password: 'password',
     database: 'school_club_activity',
+    // Ensure UTF-8 round-trip so accents (e.g. "Après-ski") render correctly
+    charset: 'utf8mb4',
+    collation: 'utf8mb4_unicode_ci',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0

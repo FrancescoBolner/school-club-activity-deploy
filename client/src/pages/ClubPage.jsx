@@ -311,7 +311,11 @@ const ClubPage = () => {
                         <p style={{ textAlign: "center", opacity: 0.6 }}>No events yet</p>
                     </div>
                 ) : events.map((event) => (
-                    <div className="event elevated" key={event.eventid} style={{borderLeftColor: club.bannerColor}}>
+                    <div
+                        className="event elevated"
+                        key={event.eventid}
+                        style={{ borderLeftColor: (club && club.bannerColor) || '#38bdf8' }}
+                    >
                         <div className="event-header">
                             <div>
                                 <div className="event-meta">

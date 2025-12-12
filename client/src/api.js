@@ -1,8 +1,15 @@
 import axios from 'axios'
 import { getSession, clearSession, saveSession } from './utils/auth'
 
+// Pick API base from env when provided; fall back to the running backend port during local dev.
+const apiBase =
+  import.meta.env.VITE_API_URL ||
+  (['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? 'http://localhost:3000'
+    : '/api')
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api'
+  baseURL: apiBase
 })
 
 api.interceptors.request.use(config => {
