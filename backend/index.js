@@ -864,18 +864,16 @@ app.get('/notifications', requireAuth, async (req, res) => {
            AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
            AND n.username IS NULL
            AND n.clubName = ?
-           AND n.senderUsername != ?
          ORDER BY n.${orderKey} ${direction} LIMIT ? OFFSET ?`,
-        [like, like, req.user.club, req.user.username, limit, offset]
+        [like, like, req.user.club, limit, offset]
       )
       const [[{ total: clubTotal }]] = await dbp.query(
         `SELECT COUNT(*) AS total FROM notifications n
          WHERE n.replyTo IS NULL
            AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
            AND n.username IS NULL
-           AND n.clubName = ?
-           AND n.senderUsername != ?`,
-        [like, like, req.user.club, req.user.username]
+           AND n.clubName = ?`,
+        [like, like, req.user.club]
       )
       rows = clubRows
       total = clubTotal
@@ -903,7 +901,7 @@ app.get('/notifications', requireAuth, async (req, res) => {
       rows = allRows.slice(offset, offset + limit)
       total = allRows.length
     } else {
-      // Default: inbox - all received person-to-person messages + conversations with at least one received message (no club-wide)
+      // Default: inbox - all received person-to-person messages + conversations with at least one received message + club-wide emails not sent by user
       const [inboxRows] = await dbp.query(
         `SELECT DISTINCT n.*, 1 as recipientCount,
                 COALESCE((SELECT MAX(r.createdAt) FROM notifications r WHERE r.replyTo = n.notificationid), n.createdAt) as lastReplyTime
@@ -916,9 +914,10 @@ app.get('/notifications', requireAuth, async (req, res) => {
                SELECT 1 FROM notifications r 
                WHERE r.replyTo = n.notificationid AND r.username = ?
              )
+             OR (n.username IS NULL AND n.clubName = ? AND n.senderUsername != ?)
            )
          ORDER BY ${orderKey === 'created' ? 'lastReplyTime' : 'n.' + orderKey} ${direction} LIMIT ? OFFSET ?`,
-        [like, like, req.user.username, req.user.username, limit, offset]
+        [like, like, req.user.username, req.user.username, req.user.club, req.user.username, limit, offset]
       )
       const [[{ total: inboxTotal }]] = await dbp.query(
         `SELECT COUNT(DISTINCT n.notificationid) AS total FROM notifications n
@@ -930,8 +929,9 @@ app.get('/notifications', requireAuth, async (req, res) => {
                SELECT 1 FROM notifications r 
                WHERE r.replyTo = n.notificationid AND r.username = ?
              )
+             OR (n.username IS NULL AND n.clubName = ? AND n.senderUsername != ?)
            )`,
-        [like, like, req.user.username, req.user.username]
+        [like, like, req.user.username, req.user.username, req.user.club, req.user.username]
       )
       rows = inboxRows
       total = inboxTotal
