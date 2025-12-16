@@ -1,6 +1,9 @@
-import { React, useState, useMemo } from "react";
+import { React, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import DOMPurify from 'dompurify';
+import api from "../api";
+import { getSession } from "../utils/auth";
 
 // Progress bar component
 const ProgressBar = ({ percentage }) => {
@@ -14,64 +17,83 @@ const ProgressBar = ({ percentage }) => {
   );
 };
 
-export default function BrowseClubs({ clubs }) {
+export default function BrowseClubs() {
+  const session = getSession();
   const [search, setSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [status, setStatus] = useState("all"); // full, notFull, all
   const [orderBy, setOrderBy] = useState("membersAsc"); // nameAsc, nameDesc, membersDesc
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(6); // clubs per page
+  const [limit, setLimit] = useState(8);
 
-  // Filter and sort clubs
-  const filteredClubs = useMemo(() => {
-    let result = clubs.filter(club =>
-      club.clubName.toLowerCase().includes(search.toLowerCase())
-    );
-
-    if (status === "full") result = result.filter(c => c.memberCount >= c.memberMax);
-    if (status === "notFull") result = result.filter(c => c.memberCount < c.memberMax);
-
+  const mappedOrder = () => {
     switch (orderBy) {
       case "nameAsc":
-        result.sort((a, b) => a.clubName.localeCompare(b.clubName));
-        break;
+        return { orderBy: "clubName", order: "asc" };
       case "nameDesc":
-        result.sort((a, b) => b.clubName.localeCompare(a.clubName));
-        break;
-      case "membersAsc":
-        result.sort((a, b) => a.memberCount - b.memberCount);
-        break;
+        return { orderBy: "clubName", order: "desc" };
       case "membersDesc":
-        result.sort((a, b) => b.memberCount - a.memberCount);
-        break;
+        return { orderBy: "memberCount", order: "desc" };
+      case "membersAsc":
+      default:
+        return { orderBy: "memberCount", order: "asc" };
     }
+  };
 
-    return result;
-  }, [clubs, search, status, orderBy]);
+  const { data: clubsData, isLoading, isError } = useQuery({
+    queryKey: ['clubs', { search, status, orderBy, currentPage, limit }],
+    queryFn: async () => {
+      const { orderBy: ob, order } = mappedOrder();
+      const res = await api.get("/clubs", {
+        params: {
+          q: search,
+          status,
+          orderBy: ob,
+          order,
+          page: currentPage,
+          limit
+        }
+      });
+      return res.data;
+    },
+    placeholderData: keepPreviousData
+  });
 
-  // Pagination
-  const totalPages = Math.ceil(filteredClubs.length / pageSize);
-  const pagedClubs = filteredClubs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const clubs = clubsData?.data || clubsData || [];
+  const meta = {
+    page: clubsData?.page || 1,
+    pages: clubsData?.pages || Math.max(1, Math.ceil((clubsData?.total || clubs.length) / limit)),
+    total: clubsData?.total || clubs.length
+  };
 
   return (
     <div className="browse-page">
       {/* Top bar */}
       <div className="top-bar">
         <input
+          name="searchClubs"
           type="text"
           placeholder="Search clubs..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setCurrentPage(1)
+          }}
         />
         <button onClick={() => setFilterOpen(!filterOpen)}>≡</button>
       </div>
+
+      {isError && <div className="alert error">Failed to load clubs.</div>}
 
       {/* Filter panel */}
       {filterOpen && (
         <div className="filter-panel">
           <label>
             Status:
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <select value={status} onChange={(e) => {
+              setStatus(e.target.value)
+              setCurrentPage(1)
+            }}>
               <option value="all">Any</option>
               <option value="full">Full</option>
               <option value="notFull">Not full</option>
@@ -80,55 +102,103 @@ export default function BrowseClubs({ clubs }) {
 
           <label>
             Order by:
-            <select value={orderBy} onChange={(e) => setOrderBy(e.target.value)}>
+            <select value={orderBy} onChange={(e) => {
+              setOrderBy(e.target.value)
+              setCurrentPage(1)
+            }}>
               <option value="membersAsc">Members ↑</option>
               <option value="membersDesc">Members ↓</option>
               <option value="nameAsc">Name ↑</option>
               <option value="nameDesc">Name ↓</option>
             </select>
           </label>
-
           <label>
-            Page size:
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value))
-                setCurrentPage(1)
-              }}
-            >
-              <option value={6}>6</option>
-              <option value={9}>9</option>
+            Per page:
+            <select value={limit} onChange={(e) => {
+              setLimit(Number(e.target.value))
+              setCurrentPage(1)
+            }}>
+              <option value={4}>4</option>
+              <option value={8}>8</option>
               <option value={12}>12</option>
+              <option value={16}>16</option>
             </select>
           </label>
         </div>
       )}
 
+      {isLoading && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading...</p>}
+
       {/* Clubs grid */}
       <div className="clubs-grid">
-        {pagedClubs.map((club) => (
-          <div className="club card" key={club.clubName}>
-            <h2>{club.clubName}</h2>
-            <p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(club.description) }}></p>
-            <p>Members: {club.memberCount} / {club.memberMax}</p>
-            <ProgressBar percentage={(club.memberCount / club.memberMax) * 100} />
-            <Link className="btn" to={`/ClubPage/${club.clubName}`}>View Club</Link>
-          </div>
-        ))}
+        {clubs.map((club) => {
+          const isMyClub = session?.club === club.clubName;
+          const alreadyInClub = session?.club && !isMyClub; // Has club (including pending)
+          const bannerStyle = club.bannerImage 
+            ? { backgroundImage: `url(${club.bannerImage})` }
+            : { backgroundColor: club.bannerColor || '#38bdf8' };
+          return (
+            <div className="club card" key={club.clubName}>
+              <div className="club-banner" style={bannerStyle}></div>
+              <div className="club-content">
+                <h2>{club.clubName}</h2>
+                <p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(club.description) }}></p>
+                <p>Members: {club.memberCount} / {club.memberMax}</p>
+                <ProgressBar percentage={(club.memberCount / club.memberMax) * 100} />
+                <div className="club-actions">
+                  <Link className="btn" to={`/ClubPage/${club.clubName}`}>View Club</Link>
+                  {!isMyClub && !alreadyInClub && club.memberCount < club.memberMax && (
+                    <button className="btn" onClick={async () => {
+                      try {
+                        await api.put(`/joinClubs/${club.clubName}`);
+                        alert('Join request submitted! Please wait for approval.');
+                        window.location.reload();
+                      } catch (err) {
+                        alert(err.response?.data?.message || 'Failed to join club');
+                      }
+                    }}>Join</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Pagination */}
       <div className="pagination">
-        {Array.from({ length: totalPages }, (_, i) => (
-          <button
-            key={i}
-            className={currentPage === i + 1 ? "active" : ""}
-            onClick={() => setCurrentPage(i + 1)}
-          >
-            {i + 1}
-          </button>
-        ))}
+        {(() => {
+          const current = currentPage;
+          const total = meta.pages;
+          const pages = [];
+          
+          if (total <= 5) {
+            for (let i = 1; i <= total; i++) pages.push(i);
+          } else {
+            pages.push(1);
+            if (current > 3) pages.push('...');
+            for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+              if (!pages.includes(i)) pages.push(i);
+            }
+            if (current < total - 2) pages.push('...');
+            if (!pages.includes(total)) pages.push(total);
+          }
+          
+          return pages.map((page, idx) => 
+            page === '...' ? (
+              <span key={`ellipsis-${idx}`} style={{ padding: '0 0.5rem' }}>...</span>
+            ) : (
+              <button
+                key={page}
+                className={current === page ? "active" : ""}
+                onClick={() => setCurrentPage(page)}
+              >
+                {page}
+              </button>
+            )
+          );
+        })()}
+        <span className="pagination-meta">{meta.total} results</span>
       </div>
     </div>
   );

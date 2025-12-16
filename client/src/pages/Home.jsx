@@ -1,148 +1,234 @@
 // Page showing all clubs and incoming events
 
-import { React, useEffect, useState } from "react"
-import axios from "axios"
-import { Link, useNavigate } from "react-router-dom"
+import { React, useState } from "react"
+import { Link } from "react-router-dom"
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import api from "../api"
 import BrowseClubs from "./BrowseClub.jsx";
+import { getSession } from "../utils/auth";
+
+const formatDateRange = (start, end) => {
+    const s = new Date(start)
+    const e = end ? new Date(end) : null
+    const sameDay = e && s.toDateString() === e.toDateString()
+    const fmt = (d) => `${d.toLocaleDateString('en-GB')} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    if (!e) return fmt(s)
+    if (sameDay) return `${fmt(s)} - ${e.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    return `${fmt(s)} - ${fmt(e)}`
+}
+
+const downloadICS = (event) => {
+    const toICS = (date) => new Date(date).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
+    const start = toICS(event.startDate)
+    const end = toICS(event.endDate || event.startDate)
+    const uid = `${event.eventid || event.title}-${start}@school-club`
+    const ics = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//School Club Activity//EN',
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        `DTSTAMP:${toICS(new Date())}`,
+        `DTSTART:${start}`,
+        `DTEND:${end}`,
+        `SUMMARY:${event.title}`,
+        `DESCRIPTION:${(event.description || '').replace(/\n/g, '\\n')}`,
+        `LOCATION:${event.clubName || 'Club Event'}`,
+        'END:VEVENT',
+        'END:VCALENDAR'
+    ].join('\r\n')
+    const blob = new Blob([ics], { type: 'text/calendar' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${event.title || 'event'}.ics`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+}
 
 const Home = () => {
-    // State to hold clubs and events data
-    const [clubs, setClubs] = useState([])
-    const [events, setEvents] = useState([])
-    const [user, setUser] = useState(null)
+    const session = getSession()
+    const [page, setPage] = useState(1)
+    const [search, setSearch] = useState("")
+    const [orderBy, setOrderBy] = useState("startDate")
+    const [order, setOrder] = useState("asc")
+    const [limit, setLimit] = useState(4)
+    const [timeFilter, setTimeFilter] = useState("incoming")
+    const [filterOpen, setFilterOpen] = useState(false)
 
-    // Navigation hook to redirect
-    const navigate = useNavigate()
-    
-    // Ensure axios sends cookies with requests
-    axios.defaults.withCredentials = true;
+    const { data: eventsData, isLoading, isError } = useQuery({
+        queryKey: ['events', { search, orderBy, order, page, limit, timeFilter }],
+        queryFn: () => api.get("/events", {
+            params: { q: search, orderBy, order, page, limit, timeFilter }
+        }).then(res => res.data),
+        placeholderData: keepPreviousData
+    })
 
-    // Check user session on component mount
-    useEffect(() => {
-        axios.get("http://localhost:3000/session")
-        .then((res) => {
-            if (res.data.valid) {
-                setUser(res.data)
-            } else {
-                navigate("/LogIn")
-            }
+    const { data: clubsData } = useQuery({
+        queryKey: ['clubs-all'],
+        queryFn: () => api.get("/clubs", {
+            params: { limit: 1000 }
+        }).then(res => res.data)
+    })
+
+    const clubColors = {}
+    if (clubsData) {
+        (Array.isArray(clubsData) ? clubsData : clubsData.data || []).forEach(club => {
+            clubColors[club.clubName] = club.bannerColor || '#38bdf8'
         })
-        .catch((err) => {
-            console.error(err)
-        })
-    }, [])
-
-    // Fetch clubs data from backend
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const res = await axios.get("http://localhost:3000/clubs")
-                setClubs(res.data)
-            } catch (err) {
-                console.error(err)
-            }
-        }
-        fetchData()
-    }, [])
-
-    // Fetch events data from backend
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const res = await axios.get("http://localhost:3000/events")
-                setEvents(res.data)
-            } catch (err) {
-                console.error(err)
-            }
-        }
-        fetchData()
-    }, [])
-
-    const handleLogout = async () => {
-        try {
-            await axios.post("http://localhost:3000/logout")
-            setUser(null)
-            navigate("/LogIn")
-        } catch (err) {
-            console.error(err)
-        }
     }
 
-    if (!user) {
-        return (
-            <div>
-                <p style={{ textAlign: "center", opacity: 0.6 }}>Loading…</p>
-            </div>
-        )
+    const events = eventsData?.data || eventsData || []
+    const eventMeta = {
+        page: eventsData?.page || 1,
+        pages: eventsData?.pages || Math.max(1, Math.ceil((eventsData?.total || events.length) / limit)),
+        total: eventsData?.total || events.length
+    }
+
+    const isEventIncoming = (event) => {
+        const now = new Date()
+        const start = new Date(event.startDate)
+        const end = event.endDate ? new Date(event.endDate) : null
+        return start > now || (end && end > now)
     }
 
     // Render clubs and events
     return (
         <div>
-            <section className="dashboard-header">
-                <div className="user-card">
-                    <p className="eyebrow">Signed in as</p>
-                    <h1>{user.username}</h1>
-                    <p className="user-card__subtitle">
-                        {user.club ? `Active member of ${user.club}` : 'Not enrolled in a club yet'}
-                    </p>
-                    <div className="user-card__actions">
-                        <button onClick={handleLogout}>Log out</button>
-                        <Link className="btn secondary" to={user.club ? `/ClubPage/${user.club}` : '/CreateClub'}>
-                            {user.club ? 'View my club' : 'Create a club'}
-                        </Link>
-                    </div>
+            <h1>Club List</h1>
+            <div className="clubs">
+                {<BrowseClubs />}
+            </div>
+            {!session?.club && (
+                <div className="createClub">
+                    <h4>No club interest you?</h4>
+                    <button><Link to={"/CreateClub"}>Create Club</Link></button>
                 </div>
-                <div className="user-metrics">
-                    <div className="metric">
-                        <span className="metric-label">Club</span>
-                        <span className="metric-value">{user.club}</span>
-                    </div>
-                    <div className="metric">
-                        <span className="metric-label">Role</span>
-                        <span className="metric-value">{user.role}</span>
-                    </div>
-                    <div className="metric">
-                        <span className="metric-label">Upcoming events</span>
-                        <span className="metric-value">{events.length}</span>
-                    </div>
+            )}
+            <h1>Incoming Events</h1>
+            {isError && <div className="alert error">Unable to load events.</div>}
+            <div className="top-bar">
+                <input
+                    name="searchEvents"
+                    type="text"
+                    placeholder="Search events, descriptions or clubs"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value)
+                      setPage(1)
+                    }}
+                />
+                <button onClick={() => setFilterOpen(!filterOpen)}>≡</button>
+            </div>
+            {filterOpen && (
+                <div className="filter-panel event-filter">
+                    <label>
+                        Show:
+                        <select value={timeFilter} onChange={(e) => {
+                          setTimeFilter(e.target.value)
+                          setPage(1)
+                        }}>
+                            <option value="all">All</option>
+                            <option value="incoming">Incoming</option>
+                            <option value="past">Past</option>
+                        </select>
+                    </label>
+                    <label>
+                        Order by:
+                        <select value={orderBy} onChange={(e) => {
+                          setOrderBy(e.target.value)
+                          setPage(1)
+                        }}>
+                            <option value="startDate">Start date</option>
+                            <option value="endDate">End date</option>
+                            <option value="title">Title</option>
+                            <option value="clubName">Club</option>
+                        </select>
+                    </label>
+                    <label>
+                        Direction:
+                        <select value={order} onChange={(e) => {
+                          setOrder(e.target.value)
+                          setPage(1)
+                        }}>
+                            <option value="asc">Asc</option>
+                            <option value="desc">Desc</option>
+                        </select>
+                    </label>
+                    <label>
+                        Per page:
+                        <select value={limit} onChange={(e) => {
+                          setLimit(Number(e.target.value))
+                          setPage(1)
+                        }}>
+                            <option value={4}>4</option>
+                            <option value={8}>8</option>
+                            <option value={12}>12</option>
+                        </select>
+                    </label>
                 </div>
-            </section>
-            <section>
-                <h1>Club List</h1>
-                <div className="clubs">
-                    {<BrowseClubs clubs={clubs} />}
-                </div>
-                {!user.club && (
-                    <div className="createClub">
-                        <h4>No club interest you?</h4>
-                        <button><Link to={"/CreateClub"}>Create Club</Link></button>
-                    </div>
-                )}
-            </section>
-            <section>
-                <h1>Incoming Events</h1>
-                <div className="events">
-                    {events.map((event) => (
-                        <div className="event" key={event.eventid}>
+            )}
+            <div className="events">
+                {isLoading && <p style={{ textAlign: "center", opacity: 0.6 }}>Loading events...</p>}
+                {events.map((event) => (
+                    <div className="event elevated" key={event.eventid} style={{borderLeftColor: clubColors[event.clubName] || '#38bdf8'}}>
                         <div className="event-header">
-                            <h2>{event.title}</h2>
-                            <span className="event-date">
-                                {((s,e)=>!e
-                                    ? `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
-                                    : s.toDateString() === e.toDateString()
-                                        ? `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})} - ${e.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
-                                        : `${s.toLocaleDateString('en-GB')} ${s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})} - ${e.toLocaleDateString('en-GB')} ${e.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false})}`
-                                    )(new Date(event.startDate), event.endDate ? new Date(event.endDate) : null
-                                )}
-                            </span>
+                            <div>
+                                <div className="eyebrow">Hosted by {event.clubName}</div>
+                                <h2>{event.title}</h2>
+                                <div className="event-meta">
+                                    <span className={`pill soft ${isEventIncoming(event) ? '' : 'neutral'}`}>
+                                        {isEventIncoming(event) ? 'Incoming' : 'Past'}
+                                    </span>
+                                    <span className="event-date">{formatDateRange(event.startDate, event.endDate)}</span>
+                                </div>
+                            </div>
+                            {session.club === event.clubName && (
+                                <button className="btn-ghost btn-sm" type="button" onClick={() => downloadICS(event)}>
+                                    Add to calendar
+                                </button>
+                            )}
                         </div>
-                        <p className="event-club">Hold by {event.clubName}</p>
                         <p className="event-description">{event.description}</p>
-                        </div>
-                    ))}
-                </div>
-            </section>
+                    </div>
+                ))}
+            </div>
+            <div className="pagination">
+                {(() => {
+                    const current = eventMeta.page;
+                    const total = eventMeta.pages;
+                    const pages = [];
+                    
+                    if (total <= 5) {
+                        for (let i = 1; i <= total; i++) pages.push(i);
+                    } else {
+                        pages.push(1);
+                        if (current > 3) pages.push('...');
+                        for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+                            if (!pages.includes(i)) pages.push(i);
+                        }
+                        if (current < total - 2) pages.push('...');
+                        if (!pages.includes(total)) pages.push(total);
+                    }
+                    
+                    return pages.map((page, idx) => 
+                        page === '...' ? (
+                            <span key={`ellipsis-${idx}`} style={{ padding: '0 0.5rem' }}>...</span>
+                        ) : (
+                            <button
+                                key={page}
+                                className={current === page ? "active" : ""}
+                                onClick={() => setPage(page)}
+                            >
+                                {page}
+                            </button>
+                        )
+                    );
+                })()}
+                <span className="pagination-meta">{eventMeta.total} results</span>
+            </div>
         </div>
     )
 }

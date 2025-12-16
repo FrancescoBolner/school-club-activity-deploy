@@ -3,481 +3,1225 @@
 import express from 'express'
 import mysql from 'mysql2'
 import cors from 'cors'
-import session from 'express-session'
-import cookieParser from 'cookie-parser'
-import bodyParser from 'body-parser'
-import bcrypt from 'bcrypt'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 
 // Initialize express app
 const app = express()
-app.use(express.json())
-app.use(cors({
-    origin: [
-        'http://localhost:5173',
-        'http://localhost:3000'
-    ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true
-}))
-app.use(cookieParser())
-app.use(bodyParser.json())
-app.use(session({
-    secret: 'secret',
-    resave: false,
-    saveUninitialized: true,
-    cookie: {
-        secure: false,
-        maxAge: 24 * 60 * 60 * 1000 // 1 day
-    }
-}))
 
-// Create a connection to the database
+// Create a connection pool to the database
 // USE YOUR OWN DATABASE CREDENTIALS
-const db = mysql.createConnection({
+const db = mysql.createPool({
     host: '127.0.0.1',
     port: '3306',
     user: 'root',
     password: 'password',
-    database: 'school_club_activity'
+    database: 'school_club_activity',
+    // Ensure UTF-8 round-trip so accents (e.g. "Après-ski") render correctly
+    charset: 'utf8mb4',
+    collation: 'utf8mb4_unicode_ci',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 })
 
-// Connect to the database
-db.connect(err => {
-  if (err) {
+// Promise helper for async/await queries
+const dbp = db.promise()
+
+// Check connection to the database
+dbp.query('SELECT 1')
+  .then(() => console.log('Connected to MySQL via mysql2'))
+  .catch(err => {
     console.error('DB connection error:', err)
     process.exit(1)
+  })
+
+// --- Auth + utilities ---
+const unauthorized = res => res.status(401).json({ message: 'Authentication required' })
+const forbidden = res => res.status(403).json({ message: 'Not allowed for your role/club' })
+
+const requireAuth = async (req, res, next) => {
+  const username = req.headers['x-username']
+  const sessionId = req.headers['x-session-id']
+
+  if (!username || !sessionId) return unauthorized(res)
+
+  try {
+    const [rows] = await dbp.query(
+      'SELECT username, role, club FROM person WHERE username = ? AND sessionId = ?',
+      [username, sessionId]
+    )
+    if (rows.length === 0) return unauthorized(res)
+    req.user = rows[0]
+    next()
+  } catch (err) {
+    console.error('Auth check failed', err)
+    return res.status(500).json({ message: 'Auth lookup failed' })
   }
-  console.log('Connected to MySQL via mysql2')
+}
+
+const requireRoles = (...roles) => (req, res, next) => {
+  if (!req.user) return unauthorized(res)
+  if (roles.length && !roles.includes(req.user.role)) return forbidden(res)
+  next()
+}
+
+const requireClubMatch = clubGetter => async (req, res, next) => {
+  try {
+    const targetClub = clubGetter(req)
+    if (targetClub && req.user?.club && req.user.club !== targetClub) return forbidden(res)
+    next()
+  } catch (err) {
+    console.error('Club check failed', err)
+    return res.status(500).json({ message: 'Club check failed' })
+  }
+}
+
+const recalcMemberCount = async clubName => {
+  if (!clubName) return
+  await dbp.query(
+    "UPDATE clubs SET memberCount = (SELECT COUNT(*) FROM person WHERE club = ? AND role IN ('CL','VP','CM')) WHERE clubName = ?",
+    [clubName, clubName]
+  )
+}
+
+const createNotification = async ({ username, senderUsername = null, clubName, type = 'info', message, link = null, replyTo = null }) => {
+  if (!username || !message) return
+  await dbp.query(
+    'INSERT INTO notifications (username, senderUsername, clubName, type, message, link, replyTo) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [username, senderUsername, clubName || null, type, message, link, replyTo]
+  )
+}
+
+const toNumber = (value, fallback) => {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
+const buildPagination = (query, allowedOrder, defaultOrder) => {
+  const search = query.q || ''
+  const orderKey = allowedOrder[query.orderBy] || defaultOrder
+  const direction = (query.order || '').toLowerCase() === 'desc' ? 'DESC' : 'ASC'
+  const limit = Math.min(toNumber(query.limit, 10), 50)
+  const page = toNumber(query.page, 1)
+  const offset = (page - 1) * limit
+  return { search, orderKey, direction, limit, page, offset }
+}
+
+// Middleware
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false
 })
 
-// Reload session values from DB when the logged-in user is updated
-const refreshSessionForUser = (req, username) => {
-    if (!req.session || req.session.username !== username) return Promise.resolve()
+app.use(helmet({ crossOriginResourcePolicy: false }))
+app.use(cors({ origin: true }))
+app.use(express.json({ limit: '1mb' }))
+app.use(apiLimiter)
 
-    return new Promise((resolve, reject) => {
-        const q = 'SELECT username, role, club FROM person WHERE username = ? LIMIT 1'
-        db.query(q, username, (err, data) => {
-            if (err) return reject(err)
-            if (data.length > 0) {
-                req.session.username = data[0].username
-                req.session.role = data[0].role
-                req.session.club = data[0].club
-            }
-            resolve()
-        })
-    })
-}
+// Get all clubs with optional search/order/pagination (requires login)
+app.get('/clubs', requireAuth, async (req, res) => {
+  console.log(`GET /clubs - User: ${req.user?.username}`)
+  try {
+    const { search, orderKey, direction, limit, page, offset } = buildPagination(
+      req.query,
+      { clubName: 'clubName', members: 'memberCount', memberCount: 'memberCount', memberMax: 'memberMax' },
+      'clubName'
+    )
+    const like = `%${search}%`
+    const status = req.query.status
+    const statusClause =
+      status === 'full' ? ' AND memberCount >= memberMax' :
+      status === 'notFull' ? ' AND memberCount < memberMax' : ''
 
-const SALT_ROUNDS = 10
+    const [rows] = await dbp.query(
+      `SELECT * FROM clubs WHERE clubName LIKE ?${statusClause} ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
+      [like, limit, offset]
+    )
+    const [[{ total }]] = await dbp.query(`SELECT COUNT(*) AS total FROM clubs WHERE clubName LIKE ?${statusClause}`, [like])
 
-const hashPassword = plain => {
-    return new Promise((resolve, reject) => {
-        bcrypt.hash(plain, SALT_ROUNDS, (err, hash) => {
-            if (err) return reject(err)
-            resolve(hash)
-        })
-    })
-}
-
-const upgradePasswordIfNeeded = (user, suppliedPassword) => {
-    if (!user.password || user.password.startsWith('$2')) return Promise.resolve()
-    return hashPassword(suppliedPassword)
-        .then(hash => new Promise((resolve, reject) => {
-            const q = 'UPDATE person SET password = ? WHERE username = ?'
-            db.query(q, [hash, user.username], err => {
-                if (err) return reject(err)
-                resolve()
-            })
-        }))
-}
-
-const updateMemberCount = (clubName, delta) => {
-    if (!clubName || typeof delta !== 'number' || delta === 0) return Promise.resolve()
-
-    return new Promise((resolve, reject) => {
-        const q = 'UPDATE clubs SET memberCount = GREATEST(memberCount + ?, 0) WHERE clubName = ?'
-        db.query(q, [delta, clubName], err => {
-            if (err) return reject(err)
-            resolve()
-        })
-    })
-}
-
-// Get session info
-app.get('/session', (req, res) => {
-    if (req.session.username) {
-        return res.status(200).json({ valid: true, username: req.session.username, role: req.session.role, club: req.session.club })
-    } else {
-        return res.status(200).json({ valid: false })
+    // When pagination/search is used, include metadata
+    if (req.query.page || req.query.limit || req.query.q || req.query.orderBy || req.query.order) {
+      return res.json({
+        data: rows,
+        page,
+        pages: Math.ceil(total / limit) || 1,
+        total
+      })
     }
-})
 
-// Get all clubs
-app.get('/clubs', (req, res) => {
-    // Create the SELECT query
-    const q = "SELECT * FROM clubs"
-
-    // Execute the query
-    db.query(q, (err, data) => {
-        if (err) return res.status(500).json(err)
-        return res.status(200).json(data)
-    })
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error fetching clubs', err)
+    return res.status(500).json({ message: 'Failed to fetch clubs' })
+  }
 })
 
 
-// Get specific club by clubName
-app.get('/clubs/:clubName', (req, res) => {
-    // Cerate the SELECT query
-    const q = "SELECT * FROM clubs WHERE clubName = ? LIMIT 1"
-    const clubName = req.params.clubName
-
-    // Execute the query
-        db.query(q, clubName, (err, data) => {
-            if (err) return res.status(500).json(err)
-        return res.status(200).json(data)
-    })
+// Get specific club by clubName (requires login)
+app.get('/clubs/:clubName', requireAuth, async (req, res) => {
+  const clubName = req.params.clubName
+  console.log(`GET /clubs/${clubName} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT * FROM clubs WHERE clubName = ?', [clubName])
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error fetching club', err)
+    return res.status(500).json({ message: 'Failed to fetch club' })
+  }
 })
 
-// Get specific events by clubName
-app.get('/events/:clubName', (req, res) => {
-    // Cerate the SELECT query
-    const q = "SELECT * FROM events WHERE clubName = ? ORDER BY startDate ASC"
-    const clubName = req.params.clubName
+// Get specific events by clubName with optional search/order/pagination (requires login)
+app.get('/events/:clubName', requireAuth, async (req, res) => {
+  const clubName = req.params.clubName
+  console.log(`GET /events/${clubName} - User: ${req.user?.username}`)
+  const { search, orderKey, direction, limit, page, offset } = buildPagination(
+    req.query,
+    { startDate: 'startDate', endDate: 'endDate', title: 'title', accepted: 'accepted' },
+    'startDate'
+  )
+  const like = `%${search}%`
 
-    // Execute the query
-        db.query(q, clubName, (err, data) => {
-            if (err) return res.status(500).json(err)
-        return res.status(200).json(data)
-    })
+  try {
+    // Only CL can see unaccepted events
+    const isClubLeader = req.user.role === 'CL' && req.user.club === clubName
+    const acceptedFilter = isClubLeader ? '' : ' AND accepted = 1'
+    
+    const [rows] = await dbp.query(
+      `SELECT * FROM events WHERE clubName = ? AND (title LIKE ? OR description LIKE ?)${acceptedFilter} ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
+      [clubName, like, like, limit, offset]
+    )
+    const [[{ total }]] = await dbp.query(
+      `SELECT COUNT(*) AS total FROM events WHERE clubName = ? AND (title LIKE ? OR description LIKE ?)${acceptedFilter}`,
+      [clubName, like, like]
+    )
+
+    if (req.query.page || req.query.limit || req.query.q || req.query.orderBy || req.query.order) {
+      return res.json({
+        data: rows,
+        page,
+        pages: Math.ceil(total / limit) || 1,
+        total
+      })
+    }
+
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error fetching events', err)
+    return res.status(500).json({ message: 'Failed to fetch events' })
+  }
 })
 
-// Get person by clubName
-app.get('/person/:clubName', (req, res) => {
+// Get person by clubName (requires login)
+app.get('/person/:clubName', requireAuth, (req, res) => {
     // Cerate the SELECT query
     const q = "SELECT username, role FROM person WHERE club = ? ORDER BY FIELD(role, 'CL', 'VP', 'CM', 'STU'), username ASC"
     const clubName = req.params.clubName
+    console.log(`GET /person/${clubName} - User: ${req.user?.username}`)
 
     // Execute the query
-        db.query(q, clubName, (err, data) => {
-            if (err) return res.status(500).json(err)
-        return res.status(200).json(data)
+    db.query(q, clubName, (err, data) => {
+        if (err) return res.json(err)
+        return res.json(data)
     })
 })
 
-// Get specific comments by clubName
-app.get('/comments/:clubName', (req, res) => {
-    // Cerate the SELECT query
-    const q = "SELECT * FROM comments WHERE clubName = ? ORDER BY date DESC"
-    const clubName = req.params.clubName
+// Get specific comments by clubName with optional search/order/pagination (requires login)
+app.get('/comments/:clubName', requireAuth, async (req, res) => {
+  const clubName = req.params.clubName
+  console.log(`GET /comments/${clubName} - User: ${req.user?.username}`)
+  const { search, orderKey, direction, limit, page, offset } = buildPagination(
+    req.query,
+    { date: 'date', rating: 'rating', username: 'username' },
+    'date'
+  )
+  const like = `%${search}%`
 
-    // Execute the query
-        db.query(q, clubName, (err, data) => {
-            if (err) return res.status(500).json(err)
-        return res.status(200).json(data)
-    })
+  try {
+    const [rows] = await dbp.query(
+      `SELECT * FROM comments WHERE clubName = ? AND (comment LIKE ? OR username LIKE ?) ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
+      [clubName, like, like, limit, offset]
+    )
+    const [[{ total }]] = await dbp.query(
+      'SELECT COUNT(*) AS total FROM comments WHERE clubName = ? AND (comment LIKE ? OR username LIKE ?)',
+      [clubName, like, like]
+    )
+
+    if (req.query.page || req.query.limit || req.query.q || req.query.orderBy || req.query.order) {
+      return res.json({
+        data: rows,
+        page,
+        pages: Math.ceil(total / limit) || 1,
+        total
+      })
+    }
+
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error fetching comments', err)
+    return res.status(500).json({ message: 'Failed to fetch comments' })
+  }
 })
 
-// Get upcoming events
-app.get('/events', (req, res) => {
-    // Create the SELECT query
-    const q = "SELECT * FROM events WHERE accepted = 1 AND (startDate > NOW() OR (endDate IS NOT NULL AND endDate > NOW())) ORDER BY startDate ASC;"
+// Get upcoming events with optional search/order/pagination (requires login)
+app.get('/events', requireAuth, async (req, res) => {
+  console.log(`GET /events - User: ${req.user?.username}`)
+  const { search, orderKey, direction, limit, page, offset } = buildPagination(
+    req.query,
+    { startDate: 'startDate', endDate: 'endDate', title: 'title', clubName: 'clubName' },
+    'startDate'
+  )
+  const like = `%${search}%`
+  const timeFilter = req.query.timeFilter
+  let timeClause = ''
+  if (timeFilter === 'incoming') {
+    timeClause = ' AND (startDate > NOW() OR (endDate IS NOT NULL AND endDate > NOW()))'
+  } else if (timeFilter === 'past') {
+    timeClause = ' AND startDate <= NOW() AND (endDate IS NULL OR endDate <= NOW())'
+  }
+  
+  try {
+    const [rows] = await dbp.query(
+      `SELECT * FROM events 
+       WHERE accepted = 1${timeClause}
+         AND (title LIKE ? OR description LIKE ? OR clubName LIKE ?)
+       ORDER BY ${orderKey} ${direction}
+       LIMIT ? OFFSET ?`,
+      [like, like, like, limit, offset]
+    )
+    const [[{ total }]] = await dbp.query(
+      `SELECT COUNT(*) AS total FROM events 
+       WHERE accepted = 1${timeClause}
+         AND (title LIKE ? OR description LIKE ? OR clubName LIKE ?)`,
+      [like, like, like]
+    )
 
-    // Execute the query
-        db.query(q, (err, data) => {
-            if (err) return res.status(500).json(err)
-        return res.status(200).json(data)
-    })
+    if (req.query.page || req.query.limit || req.query.q || req.query.orderBy || req.query.order) {
+      return res.json({
+        data: rows,
+        page,
+        pages: Math.ceil(total / limit) || 1,
+        total
+      })
+    }
+
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error fetching events', err)
+    return res.status(500).json({ message: 'Failed to fetch events' })
+  }
 })
 
-// User login
-app.post('/login', (req, res) => {
-    // Create the SELECT query
-    const q = "SELECT * FROM person WHERE username = ? LIMIT 1"
+// Public signup (creates a STU account and logs in)
+app.post('/signup', async (req, res) => {
+  const { username, password } = req.body || {}
+  console.log(`POST /signup - Username: ${username}`)
+  if (!username || !password) return res.status(400).json({ message: 'Username and password are required' })
+  if (String(username).length < 3) return res.status(400).json({ message: 'Username must be at least 3 characters' })
+  if (String(password).length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters' })
 
-    // Execute the query
-    db.query(q, [req.body.username], async (err, data) => {
-        if (err) return res.status(500).json(err)
+  try {
+    const [exists] = await dbp.query('SELECT 1 FROM person WHERE username = ?', [username])
+    if (exists.length > 0) return res.status(400).json({ message: 'Username already exists' })
 
-        if (data.length === 0) {
-            return res.status(401).json({ login: false })
-        }
+    const hash = await bcrypt.hash(password, 10)
+    await dbp.query('INSERT INTO person (username, password, role, club) VALUES (?, ?, ?, NULL)', [username, hash, 'STU'])
 
-        const user = data[0]
-        const storedPassword = user.password || ''
-        let isValidPassword = false
+    // Create session immediately so the user is logged in after signup
+    const sessionId = crypto.randomUUID()
+    await dbp.query('UPDATE person SET sessionId = ? WHERE username = ?', [sessionId, username])
 
-        if (storedPassword.startsWith('$2')) {
-            try {
-                isValidPassword = await bcrypt.compare(req.body.password, storedPassword)
-            } catch (compareErr) {
-                return res.status(500).json(compareErr)
-            }
-        } else {
-            isValidPassword = storedPassword === req.body.password
-        }
-
-        if (!isValidPassword) {
-            return res.status(401).json({ login: false })
-        }
-
-        upgradePasswordIfNeeded(user, req.body.password).catch(err => console.error('Auto-upgrade password failed', err))
-
-        req.session.username = user.username
-        req.session.role = user.role
-        req.session.club = user.club
-        return res.status(200).json({ login: true })
-    })
+    return res.status(201).json({ username, role: 'STU', club: null, sessionId })
+  } catch (err) {
+    console.error('Signup failed', err)
+    return res.status(500).json({ message: 'Failed to create account' })
+  }
 })
 
-// Destroy current session
-app.post('/logout', (req, res) => {
-    req.session.destroy(err => {
-        if (err) return res.status(500).json({ message: 'Unable to logout' })
-        res.clearCookie('connect.sid')
-        return res.status(200).json({ logout: true })
+// User login (creates a session)
+app.post('/login', async (req, res) => {
+  const { username, password } = req.body
+  console.log(`POST /login - Username: ${username}`)
+  if (!username || !password) return res.status(400).json({ message: 'Username and password required' })
+
+  try {
+    const [rows] = await dbp.query('SELECT username, password, role, club FROM person WHERE username = ?', [username])
+    if (rows.length === 0) return res.status(401).json({ message: 'Invalid credentials' })
+
+    const stored = rows[0].password || ''
+    let isValid = false
+    try {
+      isValid = await bcrypt.compare(password, stored)
+    } catch (err) {
+      isValid = false
+    }
+    // Fallback for legacy plain-text seeds
+    if (!isValid && password === stored) isValid = true
+
+    if (!isValid) return res.status(401).json({ message: 'Invalid credentials' })
+
+    const sessionId = crypto.randomUUID()
+    await dbp.query('UPDATE person SET sessionId = ? WHERE username = ?', [sessionId, username])
+
+    return res.json({
+      username,
+      role: rows[0].role,
+      club: rows[0].club,
+      sessionId
     })
+  } catch (err) {
+    console.error('Login failed', err)
+    return res.status(500).json({ message: 'Login failed' })
+  }
+})
+
+app.post('/logout', requireAuth, async (req, res) => {
+  console.log(`POST /logout - User: ${req.user?.username}`)
+  try {
+    await dbp.query('UPDATE person SET sessionId = NULL WHERE username = ?', [req.user.username])
+    return res.json({ message: 'Logged out' })
+  } catch (err) {
+    console.error('Logout failed', err)
+    return res.status(500).json({ message: 'Logout failed' })
+  }
+})
+
+// Get current session information
+app.get('/session', requireAuth, async (req, res) => {
+  console.log(`GET /session - User: ${req.user?.username}`)
+  return res.json({
+    username: req.user.username,
+    role: req.user.role,
+    club: req.user.club
+  })
 })
 
 // Create a new club
-app.post('/createClub', (req, res) => {
-    const values = [
-      req.body.clubName,
-      req.body.description,
-      req.body.memberCount,
-      req.body.memberMax
-    ]
+app.post('/createClub', requireAuth, requireRoles('STU'), async (req, res) => {
+  const { clubName, description, memberMax, bannerImage, bannerColor } = req.body
+  console.log(`POST /createClub - User: ${req.user?.username}, Club: ${clubName}`)
+  if (!clubName || !description || !memberMax) return res.status(400).json({ message: 'Missing club fields' })
+  if (req.user.club) return res.status(400).json({ message: 'You must not be enrolled in any club to create a new one' })
+  const maxMembers = Number(memberMax)
+  if (Number.isNaN(maxMembers) || maxMembers < 1) return res.status(400).json({ message: 'memberMax must be a positive number' })
 
-    // First check if club already exists
-    const q1 = "SELECT * FROM clubs WHERE clubName = ?"
+  try {
+    const [exists] = await dbp.query('SELECT 1 FROM clubs WHERE clubName = ?', [clubName])
+    if (exists.length > 0) return res.status(400).json({ message: 'Club already exists' })
 
-    db.query(q1, req.body.clubName, (err, data) => {
-        if (err) return res.status(500).json(err)
+    await dbp.query(
+      'INSERT INTO clubs (clubName, description, memberCount, memberMax, bannerImage, bannerColor) VALUES (?, ?, ?, ?, ?, ?)',
+      [clubName, description, 1, maxMembers, bannerImage || '', bannerColor || '#38bdf8']
+    )
+    await dbp.query('UPDATE person SET role = ?, club = ? WHERE username = ?', ['CL', clubName, req.user.username])
 
-        // Club already exists
-        if (data.length > 0) return res.status(400).json({ message: "Club already exists" })
-
-        // Create the club
-        const q2 = "INSERT INTO clubs (clubName, description, memberCount, memberMax) VALUES (?)"
-        db.query(q2, [values], (err, data) => {
-            if (err) return res.status(500).json(err)
-
-            const q3 = "UPDATE person SET role = 'CL', club = ? WHERE username = ?"
-            db.query(q3, [req.body.clubName, req.body.username], (err, data) => {
-                if (err) return res.status(500).json(err)
-                return res.status(201).json("Club added successfully")
-            })
-        })
-    })
+    return res.status(201).json({ message: 'Club added successfully', sessionUpdate: { role: 'CL', club: clubName } })
+  } catch (err) {
+    console.error('Create club failed', err)
+    return res.status(500).json({ message: 'Failed to create club' })
+  }
 })
 
-// Create a new comment
-app.post('/comment', (req, res) => {
-    // Cerate the INSERT query
-    const q = "INSERT INTO comments (date, comment, rating, username, clubName) VALUES (NOW(), ?)"
-    const values = [
-      req.body.comment,
-      req.body.rating,
-      req.body.username,
-      req.body.clubName
-    ]
+// Create a new comment (anyone logged in can comment)
+app.post('/comment', requireAuth, async (req, res) => {
+  const { comment, rating, clubName } = req.body
+  console.log(`POST /comment - User: ${req.user?.username}, Club: ${clubName}`)
+  if (!comment || !clubName) return res.status(400).json({ message: 'Comment and clubName are required' })
 
-    // Execute the query
-    db.query(q, [values], (err, data) => {
-        if (err) return res.status(500).json(err)
-        return res.status(201).json("Comment added successfully")
-    })
+  try {
+    await dbp.query(
+      'INSERT INTO comments (date, comment, rating, username, clubName) VALUES (NOW(), ?, ?, ?, ?)',
+      [comment, rating ?? 0, req.user.username, clubName]
+    )
+    return res.json({ message: 'Comment added successfully' })
+  } catch (err) {
+    console.error('Add comment failed', err)
+    return res.status(500).json({ message: 'Failed to add comment' })
+  }
 })
 
 // Create a new event
-app.post('/createEvent', (req, res) => {
-    // Cerate the INSERT query
-    const q = "INSERT INTO events (title, description, startDate, endDate, clubName) VALUES (?)"
-    const values = [
-      req.body.title,
-      req.body.description,
-      req.body.startDate,
-      req.body.endDate === "" ? null : req.body.endDate,
-      req.body.clubName
-    ]
+app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch(req => req.body.clubName), async (req, res) => {
+  const { title, description, startDate, endDate, clubName } = req.body
+  console.log(`POST /createEvent - User: ${req.user?.username}, Event: ${title}, Club: ${clubName}`)
+  if (!title || !description || !startDate || !clubName) return res.status(400).json({ message: 'Missing event fields' })
 
-    // Execute the query
-    db.query(q, [values], (err, data) => {
-        if (err) return res.status(500).json(err)
-        return res.status(201).json("Event added successfully")
-    })
+  try {
+    // Convert datetime-local format to MySQL datetime format
+    const formatDate = (date) => date ? date.replace('T', ' ') + ':00' : null
+    const formattedStartDate = formatDate(startDate)
+    const formattedEndDate = endDate && endDate !== '' ? formatDate(endDate) : null
+    
+    await dbp.query(
+      'INSERT INTO events (title, description, startDate, endDate, clubName) VALUES (?, ?, ?, ?, ?)',
+      [title, description, formattedStartDate, formattedEndDate, clubName]
+    )
+    
+    // Notify club leader about the new event
+    const [members] = await dbp.query(
+      "SELECT username FROM person WHERE club = ? AND role = 'CL'",
+      [clubName]
+    )
+    for (const member of members) {
+      await createNotification({
+        username: member.username,
+        clubName: clubName,
+        type: 'event',
+        message: `New event "${title}" has been created for ${clubName}`,
+        link: `/ClubPage/${clubName}`
+      })
+    }
+    
+    return res.json({ message: 'Event added successfully' })
+  } catch (err) {
+    console.error('Create event failed', err)
+    return res.status(500).json({ message: 'Failed to create event', error: err.message })
+  }
 })
 
 // Delete a club by clubName and reset members
-app.delete('/clubs/:clubName', (req, res) => {
-    const clubName = req.params.clubName
-
-    // First, update all members of the club
-    const q1 = "UPDATE person SET role = 'STU', club = NULL WHERE club = ?"
-
-    db.query(q1, [clubName], (err, updateData) => { // -----> UPDATE: does not set club to NULL and role to STU
-        if (err) return res.status(500).json(err)
-
-        // Then delete the club
-        const q2 = "DELETE FROM clubs WHERE clubName = ?"
-        db.query(q2, [clubName], (err, deleteData) => {
-            if (err) return res.status(500).json(err)
-            return res.status(200).json("Club deleted and members reset successfully")
-        })
-    })
+app.delete('/clubs/:clubName', requireAuth, requireRoles('CL'), requireClubMatch(req => req.params.clubName), async (req, res) => {
+  const clubName = req.params.clubName
+  console.log(`DELETE /clubs/${clubName} - User: ${req.user?.username}`)
+  try {
+    await dbp.query("UPDATE person SET role = 'STU', club = NULL WHERE club = ?", [clubName])
+    await dbp.query("DELETE FROM clubs WHERE clubName = ?", [clubName])
+    return res.json({ message: "Club deleted and members reset successfully" })
+  } catch (err) {
+    console.error('Delete club failed', err)
+    return res.status(500).json({ message: 'Failed to delete club' })
+  }
 })
 
 // Delete a comment by commentId
-app.delete('/comment/:commentid', (req, res) => {
-    // Cerate the DELETE query
-    const q = "DELETE FROM comments WHERE commentid = ?"
-    const commentId = req.params.commentid
+app.delete('/comment/:commentid', requireAuth, async (req, res) => {
+  const commentId = req.params.commentid
+  console.log(`DELETE /comment/${commentId} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT username, clubName FROM comments WHERE commentid = ?', [commentId])
+    if (rows.length === 0) return res.status(404).json({ message: 'Comment not found' })
+    const comment = rows[0]
 
-    // Execute the query
-    db.query(q, commentId, (err, data) => {
-        if (err) return res.status(500).json(err)
-        return res.status(200).json("Comment deleted successfully")
-    })
+    const isOwner = comment.username === req.user.username
+    const isClubAdmin = ['CL', 'VP'].includes(req.user.role) && (!req.user.club || req.user.club === comment.clubName)
+
+    if (!isOwner && !isClubAdmin) return forbidden(res)
+
+    await dbp.query("DELETE FROM comments WHERE commentid = ?", [commentId])
+    return res.json({ message: "Comment deleted successfully" })
+  } catch (err) {
+    console.error('Delete comment failed', err)
+    return res.status(500).json({ message: 'Failed to delete comment' })
+  }
 })
 
 // Delete a event by eventId
-app.delete('/event/:eventid', (req, res) => {
-    // Cerate the DELETE query
-    const q = "DELETE FROM events WHERE eventid = ?"
-    const eventId = req.params.eventid
+app.delete('/event/:eventid', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+  const eventId = req.params.eventid
+  console.log(`DELETE /event/${eventId} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventId])
+    if (rows.length === 0) return res.status(404).json({ message: 'Event not found' })
+    if (req.user.club && req.user.club !== rows[0].clubName) return forbidden(res)
 
-    // Execute the query
-    db.query(q, eventId, (err, data) => {
-        if (err) return res.status(500).json(err)
-        return res.status(200).json("Comment deleted successfully")
-    })
+    await dbp.query("DELETE FROM events WHERE eventid = ?", [eventId])
+    return res.json({ message: "Event deleted successfully" })
+  } catch (err) {
+    console.error('Delete event failed', err)
+    return res.status(500).json({ message: 'Failed to delete event' })
+  }
 })
 
-// Accept a event by eventId
-app.put('/event/:eventid', (req, res) => {
-    // Cerate the UPDATE query
-    const q = "UPDATE events SET accepted = 1 WHERE eventid = ?"
-    const eventId = req.params.eventid
-
-    // Execute the query
-    db.query(q, eventId, (err, data) => {
-        if (err) return res.status(500).json(err)
-        return res.status(200).json("Comment accepted successfully")
-    })
-})
-
-// Update club details
-app.post('/updateClub/:clubName', (req, res) => {
-    const values = [
-      req.body.description,
-      req.body.memberMax,
-      req.body.clubName
-    ]
+// Accept a event by eventId (CL only per user story)
+app.put('/event/:eventid', requireAuth, requireRoles('CL'), async (req, res) => {
+  const eventId = req.params.eventid
+  console.log(`PUT /event/${eventId} - User: ${req.user?.username} - Accepting event`)
+  try {
+    const [rows] = await dbp.query('SELECT clubName, title FROM events WHERE eventid = ?', [eventId])
+    if (rows.length === 0) return res.status(404).json({ message: 'Event not found' })
+    if (req.user.club && req.user.club !== rows[0].clubName) return forbidden(res)
     
-    // Cerate the UPDATE query
-    const q1 = "SELECT memberCount FROM clubs WHERE clubName = ?"
-
-    // Execute the query
-    db.query(q1, req.body.clubName, (err, data) => {
-        if (err) return res.status(500).json(err)
-
-        // Club already exists
-        if (data[0].memberCount > req.body.memberMax) return res.status(400).json({ message: "Max members higher lower then current memeres count" })
-
-        // Create the club
-        const q2 = "UPDATE clubs SET description = ?, memberMax = ? WHERE clubName = ?"
-        db.query(q2, values, (err, data) => {
-            if (err) return res.status(500).json(err)
-            return res.status(200).json("Club updated successfully")
-        })
-    })
+    const clubName = rows[0].clubName
+    const eventTitle = rows[0].title
+    
+    await dbp.query("UPDATE events SET accepted = 1 WHERE eventid = ?", [eventId])
+    
+    // Notify all club members about the accepted event
+    const [members] = await dbp.query(
+      "SELECT username FROM person WHERE club = ? AND role IN ('CL', 'VP', 'CM')",
+      [clubName]
+    )
+    for (const member of members) {
+      await createNotification({
+        username: member.username,
+        clubName: clubName,
+        type: 'event',
+        message: `Event "${eventTitle}" has been created for ${clubName}`,
+        link: `/ClubPage/${clubName}`
+      })
+    }
+    
+    return res.json({ message: "Event accepted successfully" })
+  } catch (err) {
+    console.error('Accept event failed', err)
+    return res.status(500).json({ message: 'Failed to accept event' })
+  }
 })
 
-app.put('/joinClubs/:clubName', (req, res) => {
-    // Cerate the UPDATE query
-    const q = "UPDATE person SET club = ? WHERE username = ?"
-    const clubName = req.params.clubName
-    const username = req.body.username
+// Update club details (only CL can change description and memberMax)
+app.post('/updateClub/:clubName', requireAuth, requireRoles('CL'), requireClubMatch(req => req.params.clubName), async (req, res) => {
+  const clubName = req.params.clubName
+  const { description, memberMax, bannerImage, bannerColor } = req.body
+  console.log(`POST /updateClub/${clubName} - User: ${req.user?.username}`)
+  if (!memberMax) return res.status(400).json({ message: 'Missing fields' })
+  const maxMembers = Number(memberMax)
+  if (Number.isNaN(maxMembers) || maxMembers < 1) return res.status(400).json({ message: 'memberMax must be positive' })
 
-    // Execute the query
-    db.query(q, [clubName, username], (err, data) => {
-        if (err) return res.status(500).json(err)
-        refreshSessionForUser(req, username)
-            .then(() => res.status(200).json("Club joined successfully"))
-            .catch(syncErr => res.status(500).json(syncErr))
-    })
+  try {
+    const [rows] = await dbp.query('SELECT memberCount FROM clubs WHERE clubName = ?', [clubName])
+    if (rows.length === 0) return res.status(404).json({ message: 'Club not found' })
+    if (rows[0].memberCount > maxMembers) return res.status(400).json({ message: 'Member max cannot be below current members' })
+
+    await dbp.query(
+      'UPDATE clubs SET description = ?, memberMax = ?, bannerImage = ?, bannerColor = ? WHERE clubName = ?',
+      [description || '', maxMembers, bannerImage || '', bannerColor || '#38bdf8', clubName]
+    )
+    return res.status(201).json({ message: "Club updated successfully" })
+  } catch (err) {
+    console.error('Update club failed', err)
+    return res.status(500).json({ message: 'Failed to update club' })
+  }
 })
 
-app.put('/expell/:username', (req, res) => {
-    // Cerate the UPDATE query
-    const q = "UPDATE person SET club = NULL, role = 'STU' WHERE username = ?"
-    const username = req.params.username
+app.put('/joinClubs/:clubName', requireAuth, async (req, res) => {
+  const clubName = req.params.clubName
+  console.log(`PUT /joinClubs/${clubName} - User: ${req.user?.username}`)
 
-    // Execute the query
-    db.query(q, username, (err, data) => {
-        if (err) return res.status(500).json(err)
-        refreshSessionForUser(req, username)
-            .then(() => updateMemberCount(req.body.clubName, -1))
-            .then(() => res.status(200).json("User expelled successfully"))
-            .catch(syncErr => res.status(500).json(syncErr))
-    })
+  try {
+    if (req.user.club) return res.status(400).json({ message: 'Already in a club or pending' })
+
+    const [clubs] = await dbp.query('SELECT memberCount, memberMax FROM clubs WHERE clubName = ?', [clubName])
+    if (clubs.length === 0) return res.status(404).json({ message: 'Club not found' })
+    if (clubs[0].memberCount >= clubs[0].memberMax) return res.status(400).json({ message: 'Club is already full' })
+
+    await dbp.query("UPDATE person SET club = ?, role = 'STU' WHERE username = ?", [clubName, req.user.username])
+    
+    // Return updated session
+    return res.json({ message: "Join request submitted", sessionUpdate: { club: clubName, role: 'STU' } })
+  } catch (err) {
+    console.error('Join club failed', err)
+    return res.status(500).json({ message: 'Failed to join club' })
+  }
 })
 
-app.put('/accept/:username', (req, res) => {
-    // Cerate the UPDATE query
-    const q = "UPDATE person SET role = 'CM' WHERE username = ?"
-    const username = req.params.username
+app.put('/expell/:username', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+  const username = req.params.username
+  console.log(`PUT /expell/${username} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT club FROM person WHERE username = ?', [username])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
 
-    // Execute the query
-    db.query(q, username, (err, data) => {
-        if (err) return res.status(500).json(err)
-        refreshSessionForUser(req, username)
-            .then(() => updateMemberCount(req.body.clubName, 1))
-            .then(() => res.status(200).json("User accepted successfully"))
-            .catch(syncErr => res.status(500).json(syncErr))
-    })
+    await dbp.query("UPDATE person SET club = NULL, role = 'STU' WHERE username = ?", [username])
+    await recalcMemberCount(rows[0].club)
+    await createNotification({ username, clubName: rows[0].club, type: 'membership', message: `You have been removed from ${rows[0].club}` })
+    return res.json({ message: "Member expelled", sessionUpdate: { club: null, role: 'STU' } })
+  } catch (err) {
+    console.error('Expel failed', err)
+    return res.status(500).json({ message: 'Failed to expel member' })
+  }
 })
 
-app.put('/reject/:username', (req, res) => {
-    // Cerate the UPDATE query
-    const q = "UPDATE person SET club = NULL WHERE username = ?"
-    const username = req.params.username
+app.put('/accept/:username', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+  const username = req.params.username
+  console.log(`PUT /accept/${username} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT club FROM person WHERE username = ?', [username])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
 
-    // Execute the query
-    db.query(q, username, (err, data) => {
-        if (err) return res.status(500).json(err)
-        refreshSessionForUser(req, username)
-            .then(() => res.status(200).json("User rejected successfully"))
-            .catch(syncErr => res.status(500).json(syncErr))
-    })
+    const [clubRows] = await dbp.query('SELECT memberCount, memberMax FROM clubs WHERE clubName = ?', [rows[0].club])
+    if (clubRows.length && clubRows[0].memberCount >= clubRows[0].memberMax) return res.status(400).json({ message: 'Club is full' })
+
+    await dbp.query("UPDATE person SET role = 'CM' WHERE username = ?", [username])
+    await recalcMemberCount(rows[0].club)
+    await createNotification({ username, clubName: rows[0].club, type: 'membership', message: `You have been accepted into ${rows[0].club}` })
+    return res.json({ message: "Member accepted", sessionUpdate: { role: 'CM' } })
+  } catch (err) {
+    console.error('Accept failed', err)
+    return res.status(500).json({ message: 'Failed to accept member' })
+  }
 })
 
-// Promote a member to VP by username
-app.put('/promote/:username', (req, res) => {
-    // Cerate the UPDATE query
-    const q = "UPDATE person SET role = 'VP' WHERE username = ?"
-    const username = req.params.username
+app.put('/reject/:username', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+  const username = req.params.username
+  console.log(`PUT /reject/${username} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT club FROM person WHERE username = ?', [username])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
 
-    // Execute the query
-    db.query(q, username, (err, data) => {
-        if (err) return res.status(500).json(err)
-        refreshSessionForUser(req, username)
-            .then(() => res.status(200).json("User promoted successfully"))
-            .catch(syncErr => res.status(500).json(syncErr))
-    })
+    await dbp.query("UPDATE person SET club = NULL WHERE username = ?", [username])
+    await recalcMemberCount(rows[0].club)
+    await createNotification({ username, clubName: rows[0].club, type: 'membership', message: `Your request to join ${rows[0].club} was rejected` })
+    return res.json({ message: "Membership rejected", sessionUpdate: { club: null } })
+  } catch (err) {
+    console.error('Reject failed', err)
+    return res.status(500).json({ message: 'Failed to reject member' })
+  }
 })
 
-app.put('/depromote/:username', (req, res) => {
-    // Cerate the UPDATE query
-    const q = "UPDATE person SET role = 'CM' WHERE username = ?"
-    const username = req.params.username
+// Cancel own pending join request
+app.delete('/cancelJoinRequest', requireAuth, async (req, res) => {
+  console.log(`DELETE /cancelJoinRequest - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [req.user.username])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (!rows[0].club || rows[0].role !== 'STU') {
+      return res.status(400).json({ message: 'No pending join request to cancel' })
+    }
 
-    // Execute the query
-    db.query(q, username, (err, data) => {
-        if (err) return res.status(500).json(err)
-        refreshSessionForUser(req, username)
-            .then(() => res.status(200).json("User accepted successfully"))
-            .catch(syncErr => res.status(500).json(syncErr))
+    const clubName = rows[0].club
+    await dbp.query("UPDATE person SET club = NULL WHERE username = ?", [req.user.username])
+    return res.json({ message: "Join request cancelled", sessionUpdate: { club: null } })
+  } catch (err) {
+    console.error('Cancel request failed', err)
+    return res.status(500).json({ message: 'Failed to cancel join request' })
+  }
+})
+
+// Quit club (for CM and VP members)
+app.delete('/quitClub', requireAuth, async (req, res) => {
+  console.log(`DELETE /quitClub - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [req.user.username])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (!rows[0].club) {
+      return res.status(400).json({ message: 'You are not in a club' })
+    }
+    if (rows[0].role === 'CL') {
+      return res.status(403).json({ message: 'Club Leaders cannot quit. You have to delete the club.' })
+    }
+    if (rows[0].role === 'STU') {
+      return res.status(400).json({ message: 'Use cancel join request instead' })
+    }
+
+    const clubName = rows[0].club
+    await dbp.query("UPDATE person SET club = NULL, role = 'STU' WHERE username = ?", [req.user.username])
+    await recalcMemberCount(clubName)
+    return res.json({ message: "Successfully quit the club", sessionUpdate: { club: null, role: 'STU' } })
+  } catch (err) {
+    console.error('Quit club failed', err)
+    return res.status(500).json({ message: 'Failed to quit club' })
+  }
+})
+
+// Promote a member to VP or demote VP to CM by username
+app.put('/promote/:username', requireAuth, requireRoles('CL'), async (req, res) => {
+  const username = req.params.username
+  const { action } = req.body // 'promote' or 'demote'
+  console.log(`PUT /promote/${username} - User: ${req.user?.username}, Action: ${action}`)
+  try {
+    const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [username])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
+
+    let newRole, message
+    if (action === 'demote' && rows[0].role === 'VP') {
+      newRole = 'CM'
+      message = `You have been demoted to member in ${rows[0].club}`
+    } else {
+      newRole = 'VP'
+      message = `You have been promoted to VP in ${rows[0].club}`
+    }
+
+    await dbp.query("UPDATE person SET role = ? WHERE username = ?", [newRole, username])
+    await recalcMemberCount(rows[0].club)
+    await createNotification({ username, clubName: rows[0].club, type: 'membership', message })
+    return res.json({ message: action === 'demote' ? "Member demoted" : "Member promoted", sessionUpdate: { role: newRole } })
+  } catch (err) {
+    console.error('Promote/demote failed', err)
+    return res.status(500).json({ message: 'Failed to promote/demote member' })
+  }
+})
+
+// Transfer club leadership (CL only)
+app.put('/transferLeadership/:username', requireAuth, requireRoles('CL'), async (req, res) => {
+  const newLeaderUsername = req.params.username
+  console.log(`PUT /transferLeadership/${newLeaderUsername} - User: ${req.user?.username}`)
+  try {
+    const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [newLeaderUsername])
+    if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
+    if (!req.user.club || req.user.club !== rows[0].club) return res.status(400).json({ message: 'User must be in your club' })
+    if (!['CM', 'VP'].includes(rows[0].role)) return res.status(400).json({ message: 'User must be a club member (CM or VP)' })
+    if (newLeaderUsername === req.user.username) return res.status(400).json({ message: 'Cannot transfer leadership to yourself' })
+
+    const clubName = req.user.club
+    
+    // Transfer leadership: new leader becomes CL, old leader becomes VP
+    await dbp.query("UPDATE person SET role = 'CL' WHERE username = ?", [newLeaderUsername])
+    await dbp.query("UPDATE person SET role = 'VP' WHERE username = ?", [req.user.username])
+    
+    await createNotification({ 
+      username: newLeaderUsername, 
+      clubName: clubName, 
+      type: 'membership', 
+      message: `You are now the Club Leader of ${clubName}` 
     })
+    
+    return res.json({ 
+      message: "Leadership transferred successfully", 
+      sessionUpdate: { role: 'VP' } 
+    })
+  } catch (err) {
+    console.error('Transfer leadership failed', err)
+    return res.status(500).json({ message: 'Failed to transfer leadership' })
+  }
+})
+
+// Notifications
+app.get('/notifications', requireAuth, async (req, res) => {
+  console.log(`GET /notifications - User: ${req.user?.username}, Mailbox: ${req.query.mailbox || 'inbox'}`)
+  const { search, orderKey, direction, limit, page, offset } = buildPagination(
+    req.query,
+    { created: 'createdAt', type: 'type', read: 'isRead' },
+    'createdAt'
+  )
+  const like = `%${search}%`
+  const unreadFilter = req.query.unread === 'true' ? ' AND isRead = 0' : ''
+  const mailbox = req.query.mailbox || 'inbox'
+  
+  try {
+    let rows, total
+    
+    if (mailbox === 'conversation') {
+      // Show conversations - only parent emails with replies
+      // username check: person-to-person (username set) or sent by user (any email type)
+      const [convRows] = await dbp.query(
+        `SELECT DISTINCT n.*, 1 as recipientCount,
+                COALESCE((SELECT MAX(r.createdAt) FROM notifications r WHERE r.replyTo = n.notificationid), n.createdAt) as lastReplyTime
+         FROM notifications n
+         WHERE ((n.username = ? AND n.type = 'email') OR (n.senderUsername = ? AND n.type = 'email'))
+           AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
+           AND n.replyTo IS NULL
+           AND EXISTS(SELECT 1 FROM notifications r WHERE r.replyTo = n.notificationid)
+         ORDER BY lastReplyTime ${direction} LIMIT ? OFFSET ?`,
+        [req.user.username, req.user.username, like, like, limit, offset]
+      )
+      const [[{ total: convTotal }]] = await dbp.query(
+        `SELECT COUNT(DISTINCT n.notificationid) AS total
+         FROM notifications n
+         WHERE ((n.username = ? AND n.type = 'email') OR (n.senderUsername = ? AND n.type = 'email'))
+           AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
+           AND n.replyTo IS NULL
+           AND EXISTS(SELECT 1 FROM notifications r WHERE r.replyTo = n.notificationid)`,
+        [req.user.username, req.user.username, like, like]
+      )
+      rows = convRows
+      total = convTotal
+    } else if (mailbox === 'sent') {
+      // Show sent person-to-person emails - all sent parent messages + conversations with at least one sent message (no club-wide)
+      const [sentRows] = await dbp.query(
+        `SELECT DISTINCT n.*, 1 as recipientCount,
+                COALESCE((SELECT MAX(r.createdAt) FROM notifications r WHERE r.replyTo = n.notificationid), n.createdAt) as lastReplyTime
+         FROM notifications n
+         WHERE n.replyTo IS NULL
+           AND (n.message LIKE ? OR n.type LIKE ?)
+           AND (
+             n.senderUsername = ? 
+             OR EXISTS(
+               SELECT 1 FROM notifications r 
+               WHERE r.replyTo = n.notificationid AND r.senderUsername = ?
+             )
+           )
+         ORDER BY ${orderKey === 'created' ? 'lastReplyTime' : 'n.' + orderKey} ${direction} LIMIT ? OFFSET ?`,
+        [like, like, req.user.username, req.user.username, limit, offset]
+      )
+      const [[{ total: sentTotal }]] = await dbp.query(
+        `SELECT COUNT(DISTINCT n.notificationid) AS total FROM notifications n
+         WHERE n.replyTo IS NULL
+           AND (n.message LIKE ? OR n.type LIKE ?)
+           AND (
+             n.senderUsername = ? 
+             OR EXISTS(
+               SELECT 1 FROM notifications r 
+               WHERE r.replyTo = n.notificationid AND r.senderUsername = ?
+             )
+           )`,
+        [like, like, req.user.username, req.user.username]
+      )
+      rows = sentRows
+      total = sentTotal
+    } else if (mailbox === 'club') {
+      // Show club-wide emails from user's club (not sent by user)
+      const [clubRows] = await dbp.query(
+        `SELECT n.*, 1 as recipientCount FROM notifications n
+         WHERE n.replyTo IS NULL
+           AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
+           AND n.username IS NULL
+           AND n.clubName = ?
+         ORDER BY n.${orderKey} ${direction} LIMIT ? OFFSET ?`,
+        [like, like, req.user.club, limit, offset]
+      )
+      const [[{ total: clubTotal }]] = await dbp.query(
+        `SELECT COUNT(*) AS total FROM notifications n
+         WHERE n.replyTo IS NULL
+           AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
+           AND n.username IS NULL
+           AND n.clubName = ?`,
+        [like, like, req.user.club]
+      )
+      rows = clubRows
+      total = clubTotal
+    } else if (mailbox === 'all') {
+      // Show both inbox and sent - all messages user is involved in
+      const [allRows] = await dbp.query(
+        `SELECT DISTINCT n.*, 1 as recipientCount,
+                COALESCE((SELECT MAX(r.createdAt) FROM notifications r WHERE r.replyTo = n.notificationid), n.createdAt) as lastReplyTime
+         FROM notifications n
+         WHERE n.replyTo IS NULL
+           AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
+           AND (
+             n.username = ? 
+             OR n.senderUsername = ?
+             OR (n.username IS NULL AND n.clubName = ? AND n.senderUsername != ?)
+             OR EXISTS(
+               SELECT 1 FROM notifications r 
+               WHERE r.replyTo = n.notificationid 
+               AND (r.username = ? OR r.senderUsername = ?)
+             )
+           )
+         ORDER BY lastReplyTime ${direction}`,
+        [like, like, req.user.username, req.user.username, req.user.club, req.user.username, req.user.username, req.user.username]
+      )
+      rows = allRows.slice(offset, offset + limit)
+      total = allRows.length
+    } else {
+      // Default: inbox - all received person-to-person messages + conversations with at least one received message + club-wide emails not sent by user
+      const [inboxRows] = await dbp.query(
+        `SELECT DISTINCT n.*, 1 as recipientCount,
+                COALESCE((SELECT MAX(r.createdAt) FROM notifications r WHERE r.replyTo = n.notificationid), n.createdAt) as lastReplyTime
+         FROM notifications n
+         WHERE n.replyTo IS NULL
+           AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
+           AND (
+             n.username = ? 
+             OR EXISTS(
+               SELECT 1 FROM notifications r 
+               WHERE r.replyTo = n.notificationid AND r.username = ?
+             )
+             OR (n.username IS NULL AND n.clubName = ? AND n.senderUsername != ?)
+           )
+         ORDER BY ${orderKey === 'created' ? 'lastReplyTime' : 'n.' + orderKey} ${direction} LIMIT ? OFFSET ?`,
+        [like, like, req.user.username, req.user.username, req.user.club, req.user.username, limit, offset]
+      )
+      const [[{ total: inboxTotal }]] = await dbp.query(
+        `SELECT COUNT(DISTINCT n.notificationid) AS total FROM notifications n
+         WHERE n.replyTo IS NULL
+           AND (n.message LIKE ? OR n.type LIKE ?)${unreadFilter}
+           AND (
+             n.username = ? 
+             OR EXISTS(
+               SELECT 1 FROM notifications r 
+               WHERE r.replyTo = n.notificationid AND r.username = ?
+             )
+             OR (n.username IS NULL AND n.clubName = ? AND n.senderUsername != ?)
+           )`,
+        [like, like, req.user.username, req.user.username, req.user.club, req.user.username]
+      )
+      rows = inboxRows
+      total = inboxTotal
+    }
+    
+    // Fetch replies for each notification
+    for (const row of rows) {
+      const [replies] = await dbp.query(
+        'SELECT * FROM notifications WHERE replyTo = ? ORDER BY createdAt ASC',
+        [row.notificationid]
+      )
+      row.replies = replies
+      
+      // For conversations, update createdAt to use lastReplyTime (calculated in SQL query)
+      if (row.lastReplyTime) {
+        row.createdAt = row.lastReplyTime
+        delete row.lastReplyTime // Remove the helper field
+      }
+    }
+    
+    // Re-sort the rows by createdAt after updating timestamps
+    rows.sort((a, b) => {
+      const dateA = new Date(a.createdAt)
+      const dateB = new Date(b.createdAt)
+      return direction === 'DESC' ? dateB - dateA : dateA - dateB
+    })
+    
+    return res.json({ data: rows, page, pages: Math.ceil(total / limit) || 1, total })
+  } catch (err) {
+    console.error('Fetch notifications failed', err)
+    return res.status(500).json({ message: 'Failed to fetch notifications' })
+  }
+})
+
+app.get('/notifications/unreadCount', requireAuth, async (req, res) => {
+  console.log(`GET /notifications/unreadCount - User: ${req.user?.username}`)
+  try {
+    // Count conversations as 1: count distinct parent IDs where user has unread messages
+    const [[{ total }]] = await dbp.query(
+      `SELECT COUNT(DISTINCT COALESCE(replyTo, notificationid)) AS total 
+       FROM notifications 
+       WHERE username = ? AND isRead = 0`,
+      [req.user.username]
+    )
+    return res.json({ total })
+  } catch (err) {
+    console.error('Fetch unread count failed', err)
+    return res.status(500).json({ message: 'Failed to fetch unread count' })
+  }
+})
+
+app.post('/notifications', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+  const { username, clubName, type, message, link } = req.body
+  console.log(`POST /notifications - User: ${req.user?.username}, To: ${username}`)
+  if (!username || !message) return res.status(400).json({ message: 'Username and message required' })
+  if (clubName && req.user.club && req.user.club !== clubName) return forbidden(res)
+  try {
+    await createNotification({ username, clubName, type, message, link })
+    return res.status(201).json({ message: 'Notification sent' })
+  } catch (err) {
+    console.error('Create notification failed', err)
+    return res.status(500).json({ message: 'Failed to create notification' })
+  }
+})
+
+app.post('/replyEmail', requireAuth, async (req, res) => {
+  const { replyTo, message } = req.body
+  console.log(`POST /replyEmail - User: ${req.user?.username}, ReplyTo: ${replyTo}`)
+  if (!message || !replyTo) return res.status(400).json({ message: 'Message and replyTo required' })
+  
+  try {
+    // Get the original notification to determine recipient
+    const [[original]] = await dbp.query(
+      'SELECT * FROM notifications WHERE notificationid = ?',
+      [replyTo]
+    )
+    if (!original) return res.status(404).json({ message: 'Original notification not found' })
+    
+    // Prevent nested replies - can only reply to parent emails
+    if (original.replyTo) {
+      return res.status(400).json({ message: 'Cannot reply to a reply. Please reply to the original message.' })
+    }
+    
+    // Verify this is a person-to-person email
+    // Club-wide emails have username = NULL, person-to-person have username set
+    if (original.type !== 'email') {
+      return res.status(400).json({ message: 'Can only reply to email notifications' })
+    }
+    
+    if (!original.username) {
+      return res.status(400).json({ message: 'Cannot reply to club-wide emails' })
+    }
+    
+    // Determine recipient: if current user is the original sender, reply to the recipient; otherwise reply to the sender
+    const recipient = original.senderUsername === req.user.username ? original.username : original.senderUsername
+    
+    if (!recipient) return res.status(400).json({ message: 'Unable to determine reply recipient' })
+    
+    // Mark the parent notification as unread for the recipient
+    await dbp.query(
+      'UPDATE notifications SET isRead = 0 WHERE notificationid = ? AND username = ?',
+      [replyTo, recipient]
+    )
+    
+    // Create reply notification
+    await createNotification({
+      username: recipient,
+      senderUsername: req.user.username,
+      clubName: null,
+      type: 'email',
+      message: message,
+      link: null,
+      replyTo: replyTo
+    })
+    
+    return res.status(201).json({ message: 'Reply sent successfully' })
+  } catch (err) {
+    console.error('Reply email failed', err)
+    return res.status(500).json({ message: 'Failed to send reply' })
+  }
+})
+
+app.post('/sendEmail', requireAuth, async (req, res) => {
+  const { recipient, message, sendToAllClub, type, link } = req.body
+  console.log(`POST /sendEmail - User: ${req.user?.username}, To: ${sendToAllClub ? 'All club' : recipient}`)
+  if (!message) return res.status(400).json({ message: 'Message required' })
+  
+  // Validate notification type
+  const notificationType = type && ['event', 'membership', 'email'].includes(type) ? type : 'email'
+  
+  try {
+    // Check if user is CL/VP for sending to all club members
+    if (sendToAllClub) {
+      if (!['CL', 'VP'].includes(req.user.role) || !req.user.club) {
+        return res.status(403).json({ message: 'Only Club Leaders and Vice Presidents can send to all members' })
+      }
+      
+      // Create single club-wide notification with username=NULL
+      await dbp.query(
+        `INSERT INTO notifications (username, senderUsername, clubName, type, message, link, isRead, createdAt) 
+         VALUES (NULL, ?, ?, ?, ?, ?, 1, NOW())`,
+        [req.user.username, req.user.club, notificationType, message, link || null]
+      )
+      
+      return res.status(201).json({ message: `Email sent to all club members` })
+    } else {
+      // Send to individual
+      if (!recipient) return res.status(400).json({ message: 'Recipient required' })
+      // Check if recipient exists
+      const [users] = await dbp.query('SELECT username FROM person WHERE username = ?', [recipient])
+      if (users.length === 0) return res.status(404).json({ message: 'Recipient not found' })
+      
+      await createNotification({
+        username: recipient,
+        senderUsername: req.user.username,
+        clubName: req.user.club,
+        type: 'email',
+        message: message,
+        link: link || null
+      })
+      return res.status(201).json({ message: 'Email sent successfully' })
+    }
+  } catch (err) {
+    console.error('Send email failed', err)
+    return res.status(500).json({ message: 'Failed to send email' })
+  }
+})
+
+app.get('/clubMembers', requireAuth, requireRoles('CL', 'VP', 'CM'), async (req, res) => {
+  console.log(`GET /clubMembers - User: ${req.user?.username}`)
+  try {
+    if (!req.user.club) return res.status(400).json({ message: 'You are not part of a club' })
+    const [members] = await dbp.query(
+      "SELECT username, role FROM person WHERE club = ? AND role IN ('CL', 'VP', 'CM') ORDER BY role, username",
+      [req.user.club]
+    )
+    return res.json(members)
+  } catch (err) {
+    console.error('Fetch club members failed', err)
+    return res.status(500).json({ message: 'Failed to fetch club members' })
+  }
+})
+
+app.get('/allUsers', requireAuth, async (req, res) => {
+  console.log(`GET /allUsers - User: ${req.user?.username}, Search: ${req.query.q || ''}`)
+  try {
+    const search = req.query.q || ''
+    const like = `%${search}%`
+    const [users] = await dbp.query(
+      "SELECT username, role, club FROM person WHERE username LIKE ? AND username != ? ORDER BY username LIMIT 5",
+      [like, req.user.username]
+    )
+    return res.json(users)
+  } catch (err) {
+    console.error('Fetch users failed', err)
+    return res.status(500).json({ message: 'Failed to fetch users' })
+  }
+})
+
+app.put('/notifications/:id/read', requireAuth, async (req, res) => {
+  const id = req.params.id
+  console.log(`PUT /notifications/${id}/read - User: ${req.user?.username}`)
+  try {
+    const [[notification]] = await dbp.query('SELECT * FROM notifications WHERE notificationid = ?', [id])
+    if (!notification) return res.status(404).json({ message: 'Notification not found' })
+    
+    // Block marking club-wide emails as read (username=NULL)
+    if (notification.username === null) {
+      return res.status(400).json({ message: 'Cannot mark club-wide emails as read' })
+    }
+    
+    // Check if notification belongs to user
+    if (notification.username !== req.user.username && notification.senderUsername !== req.user.username) {
+      return forbidden(res)
+    }
+    
+    // Check if this is part of a conversation (has replies or is a parent with replies)
+    const [[{ hasReplies }]] = await dbp.query(
+      'SELECT COUNT(*) as hasReplies FROM notifications WHERE replyTo = ?',
+      [id]
+    )
+    
+    if (hasReplies > 0 || notification.replyTo) {
+      // This is a conversation - mark all messages in thread where current user is recipient as read
+      const parentId = notification.replyTo || id
+      await dbp.query(
+        'UPDATE notifications SET isRead = 1 WHERE username = ? AND (notificationid = ? OR replyTo = ?)',
+        [req.user.username, parentId, parentId]
+      )
+    } else {
+      // Single notification
+      if (notification.username !== req.user.username) return forbidden(res)
+      await dbp.query('UPDATE notifications SET isRead = 1 WHERE notificationid = ?', [id])
+    }
+    
+    return res.json({ message: 'Notification marked as read' })
+  } catch (err) {
+    console.error('Update notification failed', err)
+    return res.status(500).json({ message: 'Failed to update notification' })
+  }
+})
+
+app.put('/notifications/:id/unread', requireAuth, async (req, res) => {
+  const id = req.params.id
+  console.log(`PUT /notifications/${id}/unread - User: ${req.user?.username}`)
+  try {
+    const [[notification]] = await dbp.query('SELECT * FROM notifications WHERE notificationid = ?', [id])
+    if (!notification) return res.status(404).json({ message: 'Notification not found' })
+    
+    // Block marking club-wide emails as unread (username=NULL)
+    if (notification.username === null) {
+      return res.status(400).json({ message: 'Cannot mark club-wide emails as unread' })
+    }
+    
+    // Check if notification belongs to user
+    if (notification.username !== req.user.username && notification.senderUsername !== req.user.username) {
+      return forbidden(res)
+    }
+    
+    // Check if this is part of a conversation (has replies or is a parent with replies)
+    const [[{ hasReplies }]] = await dbp.query(
+      'SELECT COUNT(*) as hasReplies FROM notifications WHERE replyTo = ?',
+      [id]
+    )
+    
+    if (hasReplies > 0 || notification.replyTo) {
+      // This is a conversation - mark all messages in thread where current user is recipient as unread
+      const parentId = notification.replyTo || id
+      await dbp.query(
+        'UPDATE notifications SET isRead = 0 WHERE username = ? AND (notificationid = ? OR replyTo = ?)',
+        [req.user.username, parentId, parentId]
+      )
+    } else {
+      // Single notification
+      if (notification.username !== req.user.username) return forbidden(res)
+      await dbp.query('UPDATE notifications SET isRead = 0 WHERE notificationid = ?', [id])
+    }
+    
+    return res.json({ message: 'Notification marked as unread' })
+  } catch (err) {
+    console.error('Update notification failed', err)
+    return res.status(500).json({ message: 'Failed to update notification' })
+  }
+})
+
+// Basic error handler fallback
+app.use((err, req, res, next) => {
+  console.error('Unhandled error', err)
+  if (res.headersSent) return next(err)
+  return res.status(500).json({ message: 'Internal server error' })
 })
 
 // Start the server
