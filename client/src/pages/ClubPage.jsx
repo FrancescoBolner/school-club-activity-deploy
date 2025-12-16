@@ -1,6 +1,6 @@
 // Page to display specific club information
 
-import { React, useEffect, useMemo, useState } from "react"
+import { React, useMemo, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery, keepPreviousData } from '@tanstack/react-query'
 import DOMPurify from 'dompurify'

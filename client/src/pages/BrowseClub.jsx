@@ -1,4 +1,4 @@
-import { React, useState, useEffect } from "react";
+import { React, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import DOMPurify from 'dompurify';
@@ -66,10 +66,6 @@ export default function BrowseClubs() {
     total: clubsData?.total || clubs.length
   };
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, status, orderBy, limit]);
-
   return (
     <div className="browse-page">
       {/* Top bar */}
@@ -79,7 +75,10 @@ export default function BrowseClubs() {
           type="text"
           placeholder="Search clubs..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setCurrentPage(1)
+          }}
         />
         <button onClick={() => setFilterOpen(!filterOpen)}>≡</button>
       </div>
@@ -91,7 +90,10 @@ export default function BrowseClubs() {
         <div className="filter-panel">
           <label>
             Status:
-            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <select value={status} onChange={(e) => {
+              setStatus(e.target.value)
+              setCurrentPage(1)
+            }}>
               <option value="all">Any</option>
               <option value="full">Full</option>
               <option value="notFull">Not full</option>
@@ -100,7 +102,10 @@ export default function BrowseClubs() {
 
           <label>
             Order by:
-            <select value={orderBy} onChange={(e) => setOrderBy(e.target.value)}>
+            <select value={orderBy} onChange={(e) => {
+              setOrderBy(e.target.value)
+              setCurrentPage(1)
+            }}>
               <option value="membersAsc">Members ↑</option>
               <option value="membersDesc">Members ↓</option>
               <option value="nameAsc">Name ↑</option>
@@ -109,7 +114,10 @@ export default function BrowseClubs() {
           </label>
           <label>
             Per page:
-            <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
+            <select value={limit} onChange={(e) => {
+              setLimit(Number(e.target.value))
+              setCurrentPage(1)
+            }}>
               <option value={4}>4</option>
               <option value={8}>8</option>
               <option value={12}>12</option>

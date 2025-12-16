@@ -56,7 +56,7 @@ function App() {
         
         const res = await api.get('/notifications/unreadCount')
         setUnread(res.data.total || 0)
-      } catch (err) {
+      } catch {
         // If session is invalid, it will be handled by api interceptor
       }
     }

@@ -1,6 +1,6 @@
 // Page showing all clubs and incoming events
 
-import { React, useEffect, useState } from "react"
+import { React, useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import api from "../api"
@@ -87,10 +87,6 @@ const Home = () => {
         total: eventsData?.total || events.length
     }
 
-    useEffect(() => {
-        setPage(1)
-    }, [search, orderBy, order, limit, timeFilter])
-
     const isEventIncoming = (event) => {
         const now = new Date()
         const start = new Date(event.startDate)
@@ -119,7 +115,10 @@ const Home = () => {
                     type="text"
                     placeholder="Search events, descriptions or clubs"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => {
+                      setSearch(e.target.value)
+                      setPage(1)
+                    }}
                 />
                 <button onClick={() => setFilterOpen(!filterOpen)}>≡</button>
             </div>
@@ -127,7 +126,10 @@ const Home = () => {
                 <div className="filter-panel event-filter">
                     <label>
                         Show:
-                        <select value={timeFilter} onChange={(e) => setTimeFilter(e.target.value)}>
+                        <select value={timeFilter} onChange={(e) => {
+                          setTimeFilter(e.target.value)
+                          setPage(1)
+                        }}>
                             <option value="all">All</option>
                             <option value="incoming">Incoming</option>
                             <option value="past">Past</option>
@@ -135,7 +137,10 @@ const Home = () => {
                     </label>
                     <label>
                         Order by:
-                        <select value={orderBy} onChange={(e) => setOrderBy(e.target.value)}>
+                        <select value={orderBy} onChange={(e) => {
+                          setOrderBy(e.target.value)
+                          setPage(1)
+                        }}>
                             <option value="startDate">Start date</option>
                             <option value="endDate">End date</option>
                             <option value="title">Title</option>
@@ -144,14 +149,20 @@ const Home = () => {
                     </label>
                     <label>
                         Direction:
-                        <select value={order} onChange={(e) => setOrder(e.target.value)}>
+                        <select value={order} onChange={(e) => {
+                          setOrder(e.target.value)
+                          setPage(1)
+                        }}>
                             <option value="asc">Asc</option>
                             <option value="desc">Desc</option>
                         </select>
                     </label>
                     <label>
                         Per page:
-                        <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>
+                        <select value={limit} onChange={(e) => {
+                          setLimit(Number(e.target.value))
+                          setPage(1)
+                        }}>
                             <option value={4}>4</option>
                             <option value={8}>8</option>
                             <option value={12}>12</option>

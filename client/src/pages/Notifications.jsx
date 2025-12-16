@@ -23,10 +23,10 @@ const Notifications = () => {
   const [replyForm, setReplyForm] = useState({ notificationid: null, message: "" })
   const [showReplies, setShowReplies] = useState({})
 
-  const isAdmin = useMemo(() => session && ['CL', 'VP'].includes(session.role), [session?.role])
+  const isAdmin = useMemo(() => ['CL', 'VP'].includes(session?.role), [session?.role])
 
   // 1. Fetch Notifications
-  const { data: notificationsData, isLoading: loadingNotifications, error: notificationsError } = useQuery({
+  const { data: notificationsData, isLoading: loadingNotifications } = useQuery({
     queryKey: ['notifications', filters],
     queryFn: () => {
         const params = {

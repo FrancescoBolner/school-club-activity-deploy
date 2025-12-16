@@ -1,6 +1,6 @@
 // Page for updating a club
 
-import { React, useEffect, useState } from "react"
+import { React, useState } from "react"
 import { Link, useNavigate, useLocation } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from "../api"
@@ -13,11 +13,10 @@ const UpdateClub = () => {
     const queryClient = useQueryClient()
 
     const [clubs, setClubs] = useState({
-        clubName: clubName,
-        description: "",
-        memberMax: "",
-        bannerImage: "",
-        bannerColor: "#38bdf8"
+        description: undefined,
+        memberMax: undefined,
+        bannerImage: undefined,
+        bannerColor: undefined
     })
 
     const isLeader = session?.role === 'CL' && session?.club === clubName
@@ -29,18 +28,13 @@ const UpdateClub = () => {
         enabled: !!clubName && isLeader
     })
 
-    // Populate form when data is loaded
-    useEffect(() => {
-        if (clubData) {
-            setClubs({
-                clubName: clubData.clubName,
-                description: clubData.description || "",
-                memberMax: clubData.memberMax || "",
-                bannerImage: clubData.bannerImage || "",
-                bannerColor: clubData.bannerColor || "#38bdf8"
-            })
-        }
-    }, [clubData])
+    const effectiveClub = {
+        clubName,
+        description: clubs.description ?? clubData?.description ?? "",
+        memberMax: clubs.memberMax ?? clubData?.memberMax ?? "",
+        bannerImage: clubs.bannerImage ?? clubData?.bannerImage ?? "",
+        bannerColor: clubs.bannerColor ?? clubData?.bannerColor ?? "#38bdf8"
+    }
 
     const updateClubMutation = useMutation({
         mutationFn: (data) => api.post("/updateClub/" + clubName, data),
@@ -65,7 +59,7 @@ const UpdateClub = () => {
     const handleClick = (e) => {
         e.preventDefault()
         if (!isLeader) return alert("Only club admins can update club info.")
-        updateClubMutation.mutate(clubs)
+        updateClubMutation.mutate(effectiveClub)
     }
 
     if (isLoading) return <div className="CreateClub"><p>Loading club info...</p></div>
@@ -79,7 +73,7 @@ const UpdateClub = () => {
                         placeholder="Description" 
                         onChange={handleChange} 
                         name="description" 
-                        value={clubs.description}
+                        value={effectiveClub.description}
                         required
                     /><br/>
                     <input 
@@ -87,7 +81,7 @@ const UpdateClub = () => {
                         placeholder="Max Members" 
                         onChange={handleChange} 
                         name="memberMax" 
-                        value={clubs.memberMax}
+                        value={effectiveClub.memberMax}
                         required
                     /><br/>
                     <input 
@@ -95,7 +89,7 @@ const UpdateClub = () => {
                         placeholder="Banner Image URL (leave empty to use color)" 
                         onChange={handleChange} 
                         name="bannerImage" 
-                        value={clubs.bannerImage}
+                        value={effectiveClub.bannerImage}
                     /><br/>
                     <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.85rem" }}>
                         Banner Color:
@@ -103,7 +97,7 @@ const UpdateClub = () => {
                             type="color" 
                             onChange={handleChange} 
                             name="bannerColor" 
-                            value={clubs.bannerColor} 
+                            value={effectiveClub.bannerColor} 
                             style={{ width: "60px", height: "40px", cursor: "pointer" }}
                         />
                     </label>
