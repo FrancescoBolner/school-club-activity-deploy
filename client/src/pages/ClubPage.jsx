@@ -453,7 +453,7 @@ const ClubPage = () => {
                                                 {p.role === "VP" && (<button onClick={() => memberActionMutation.mutate({ url: "/promote/" + p.username, body: { action: 'demote' } })} title="Demote to member">▼</button>)}
                                             </>
                                         )}
-                                        {isAdmin && p.role !== "CL" && p.username !== session?.username && (
+                                        {isAdmin && p.role !== "CL" && p.username !== session?.username && !(p.role === 'VP' && session?.role === 'VP') && (
                                             <button className="deletebtn" onClick={() => memberActionMutation.mutate({ url: "/expell/" + p.username })} style={{margin: "0 0 0 0.5rem"}}>X</button>
                                         )}
                                     </td>
