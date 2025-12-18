@@ -444,6 +444,101 @@ app.post('/comment', requireAuth, async (req, res) => {
   }
 })
 
+// Get event comments with optional search/order/pagination (requires club membership)
+app.get('/eventComments/:eventid', requireAuth, async (req, res) => {
+  const eventid = parseInt(req.params.eventid)
+  console.log(`GET /eventComments/${eventid} - User: ${req.user?.username}`)
+  
+  const { search, orderKey, direction, limit, page, offset } = buildPagination(
+    req.query,
+    { date: 'date', username: 'username' },
+    'date'
+  )
+  const like = `%${search}%`
+
+  try {
+    // Check if user is a member of the club that owns this event
+    const [[event]] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventid])
+    if (!event) return res.status(404).json({ message: 'Event not found' })
+    
+    // Allow access if user is a member of the club (CL, VP, CM)
+    const isMember = req.user.club === event.clubName && ['CL', 'VP', 'CM'].includes(req.user.role)
+    if (!isMember) return res.status(403).json({ message: 'You must be a member of this club to view event comments' })
+
+    const [rows] = await dbp.query(
+      `SELECT * FROM comments WHERE eventid = ? AND (comment LIKE ? OR username LIKE ?) ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
+      [eventid, like, like, limit, offset]
+    )
+    const [[{ total }]] = await dbp.query(
+      'SELECT COUNT(*) AS total FROM comments WHERE eventid = ? AND (comment LIKE ? OR username LIKE ?)',
+      [eventid, like, like]
+    )
+
+    if (req.query.page || req.query.limit || req.query.q || req.query.orderBy || req.query.order) {
+      return res.json({
+        data: rows,
+        page,
+        pages: Math.ceil(total / limit) || 1,
+        total
+      })
+    }
+
+    return res.json(rows)
+  } catch (err) {
+    console.error('Error fetching event comments', err)
+    return res.status(500).json({ message: 'Failed to fetch event comments' })
+  }
+})
+
+// Create a new event comment (requires club membership)
+app.post('/eventComment', requireAuth, async (req, res) => {
+  const { comment, eventid } = req.body
+  console.log(`POST /eventComment - User: ${req.user?.username}, Event: ${eventid}`)
+  if (!comment || !eventid) return res.status(400).json({ message: 'Comment and eventid are required' })
+
+  try {
+    // Check if user is a member of the club that owns this event
+    const [[event]] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventid])
+    if (!event) return res.status(404).json({ message: 'Event not found' })
+    
+    const isMember = req.user.club === event.clubName && ['CL', 'VP', 'CM'].includes(req.user.role)
+    if (!isMember) return res.status(403).json({ message: 'You must be a member of this club to comment on events' })
+
+    await dbp.query(
+      'INSERT INTO comments (date, comment, rating, username, eventid) VALUES (NOW(), ?, 0, ?, ?)',
+      [comment, req.user.username, eventid]
+    )
+    return res.json({ message: 'Event comment added successfully' })
+  } catch (err) {
+    console.error('Add event comment failed', err)
+    return res.status(500).json({ message: 'Failed to add event comment' })
+  }
+})
+
+// Delete an event comment (author or club admin)
+app.delete('/eventComment/:commentid', requireAuth, async (req, res) => {
+  const commentid = parseInt(req.params.commentid)
+  console.log(`DELETE /eventComment/${commentid} - User: ${req.user?.username}`)
+  
+  try {
+    const [[comment]] = await dbp.query('SELECT username, eventid FROM comments WHERE commentid = ? AND eventid IS NOT NULL', [commentid])
+    if (!comment) return res.status(404).json({ message: 'Event comment not found' })
+    
+    // Check if user is comment author or club admin
+    const [[event]] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [comment.eventid])
+    const isAdmin = req.user.club === event.clubName && ['CL', 'VP'].includes(req.user.role)
+    const isAuthor = comment.username === req.user.username
+    
+    if (!isAdmin && !isAuthor) return res.status(403).json({ message: 'Not authorized to delete this comment' })
+
+    await dbp.query('DELETE FROM comments WHERE commentid = ?', [commentid])
+    return res.json({ message: 'Event comment deleted successfully' })
+  } catch (err) {
+    console.error('Delete event comment failed', err)
+    return res.status(500).json({ message: 'Failed to delete event comment' })
+  }
+})
+
 // Create a new event
 app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch(req => req.body.clubName), async (req, res) => {
   const { title, description, startDate, endDate, clubName } = req.body

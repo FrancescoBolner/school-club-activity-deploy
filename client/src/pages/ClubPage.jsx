@@ -61,6 +61,12 @@ const ClubPage = () => {
     const [commentFilters, setCommentFilters] = useState({ search: "", orderBy: "date", order: "desc", limit: 10 })
     
     const [newComment, setNewComment] = useState({ comment: "", rating: 0 })
+    
+    // Event comments state
+    const [showEventComments, setShowEventComments] = useState({})
+    const [eventCommentForm, setEventCommentForm] = useState({})
+    const [eventComments, setEventComments] = useState({})
+    const [eventCommentCounts, setEventCommentCounts] = useState({})
 
     const isAdmin = useMemo(() => {
         return session && ['CL', 'VP'].includes(session.role) && session.club === clubName
@@ -94,6 +100,22 @@ const ClubPage = () => {
         pages: eventsData?.pages || Math.max(1, Math.ceil((eventsData?.total || events.length) / eventFilters.limit)),
         total: eventsData?.total || events.length
     }
+
+    // Fetch comment counts for all events when events change
+    useMemo(() => {
+        if (events.length > 0 && isMember) {
+            events.forEach(event => {
+                if (event.accepted && eventCommentCounts[event.eventid] === undefined) {
+                    api.get(`/eventComments/${event.eventid}`)
+                        .then(res => {
+                            const count = Array.isArray(res.data) ? res.data.length : (res.data?.data?.length || 0)
+                            setEventCommentCounts(prev => ({ ...prev, [event.eventid]: count }))
+                        })
+                        .catch(() => setEventCommentCounts(prev => ({ ...prev, [event.eventid]: 0 })))
+                }
+            })
+        }
+    }, [events, isMember])
 
     // 4. Fetch Comments (Infinite)
     const {
@@ -191,6 +213,54 @@ const ClubPage = () => {
         onSuccess: () => queryClient.invalidateQueries(['comments', clubName]),
         onError: (err) => alert(err.response?.data?.message || "Action failed")
     })
+
+    // Event comment mutations
+    const postEventCommentMutation = useMutation({
+        mutationFn: ({ eventid, comment }) => api.post('/eventComment', { eventid, comment }),
+        onSuccess: (_, variables) => {
+            setEventCommentForm(prev => ({ ...prev, [variables.eventid]: '' }))
+            // Refetch comments for this event
+            fetchEventComments(variables.eventid)
+        },
+        onError: (err) => alert(err.response?.data?.message || "Failed to post comment")
+    })
+
+    const deleteEventCommentMutation = useMutation({
+        mutationFn: (commentid) => api.delete(`/eventComment/${commentid}`),
+        onSuccess: (_, commentid) => {
+            // Find which event this comment belongs to and refetch
+            Object.keys(eventComments).forEach(eventid => {
+                if (eventComments[eventid]?.some(c => c.commentid === commentid)) {
+                    fetchEventComments(eventid)
+                }
+            })
+        },
+        onError: (err) => alert(err.response?.data?.message || "Failed to delete comment")
+    })
+
+    const fetchEventComments = async (eventid) => {
+        try {
+            const response = await api.get(`/eventComments/${eventid}`)
+            const comments = Array.isArray(response.data) ? response.data : (response.data?.data || [])
+            setEventComments(prev => ({ ...prev, [eventid]: comments }))
+            setEventCommentCounts(prev => ({ ...prev, [eventid]: comments.length }))
+        } catch (err) {
+            console.error('Failed to fetch event comments', err)
+        }
+    }
+
+    const handleEventCommentSubmit = (eventid) => {
+        const comment = eventCommentForm[eventid]
+        if (!comment || !comment.trim()) return alert("Comment cannot be empty")
+        postEventCommentMutation.mutate({ eventid, comment })
+    }
+
+    const toggleEventComments = (eventid) => {
+        setShowEventComments(prev => ({ ...prev, [eventid]: !prev[eventid] }))
+        if (!showEventComments[eventid] && !eventComments[eventid]) {
+            fetchEventComments(eventid)
+        }
+    }
 
     const updateEventFilter = (field, value) => {
         setEventFilters(prev => ({ ...prev, [field]: value, page: field === "page" ? value : 1 }))
@@ -360,6 +430,99 @@ const ClubPage = () => {
                             )}
                         </div>
                         <p className="event-description">{event.description}</p>
+                        
+                        {/* Event Comment Section - Similar to Notification Replies */}
+                        {!!isMember && !!event.accepted && (
+                            <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
+                                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                    <button 
+                                        className="btn btn-sm" 
+                                        onClick={() => {
+                                            const currentForm = eventCommentForm[event.eventid] || ''
+                                            if (!currentForm) {
+                                                setEventCommentForm(prev => ({ ...prev, [event.eventid]: '' }))
+                                            } else {
+                                                setEventCommentForm(prev => ({ ...prev, [event.eventid]: undefined }))
+                                            }
+                                        }}
+                                    >
+                                        Comment
+                                    </button>
+                                    {!!eventCommentCounts[event.eventid] && (<button 
+                                        className="btn-ghost btn-sm" 
+                                        onClick={() => toggleEventComments(event.eventid)}
+                                    >
+                                        {showEventComments[event.eventid] ? '▲' : '▼'} {eventCommentCounts[event.eventid] ?? 0} {(eventCommentCounts[event.eventid] ?? 0) === 1 ? 'comment' : 'comments'}
+                                    </button>)}
+                                </div>
+
+                                {/* Comment Form */}
+                                {eventCommentForm[event.eventid] !== undefined && (
+                                    <div className="reply-form" style={{ marginBottom: '1rem' }}>
+                                        <textarea
+                                            value={eventCommentForm[event.eventid] || ''}
+                                            onChange={(e) => setEventCommentForm(prev => ({ ...prev, [event.eventid]: e.target.value }))}
+                                            placeholder="Write your comment..."
+                                            rows="3"
+                                        />
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                            <button 
+                                                className="btn btn-sm" 
+                                                onClick={() => handleEventCommentSubmit(event.eventid)}
+                                                disabled={postEventCommentMutation.isPending}
+                                            >
+                                                {postEventCommentMutation.isPending ? 'Posting...' : 'Post Comment'}
+                                            </button>
+                                            <button 
+                                                className="btn btn-sm btn-ghost" 
+                                                onClick={() => setEventCommentForm(prev => ({ ...prev, [event.eventid]: undefined }))}
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Comments List */}
+                                {showEventComments[event.eventid] && (
+                                    <div className="replies-list" style={{borderLeftColor: `${(club && club.bannerColor) || '#38bdf8'}`}}>
+                                        {!eventComments[event.eventid] ? (
+                                            <p style={{ textAlign: 'center', opacity: 0.6, padding: '1rem' }}>Loading comments...</p>
+                                        ) : eventComments[event.eventid].length === 0 ? (
+                                            <p style={{ textAlign: 'center', opacity: 0.6, padding: '1rem' }}>No comments yet</p>
+                                        ) : eventComments[event.eventid].map(comment => (
+                                            <div key={comment.commentid} className="reply-item" style={{ 
+                                                borderLeft: `3px solid ${(club && club.bannerColor) || '#38bdf8'}`,
+                                                backgroundColor: (club && club.bannerColor) ? `${club.bannerColor}15` : '#38bdf815'
+                                            }}>
+                                                <div className="reply-header">
+                                                    <strong>{comment.username}</strong>
+                                                    <span className="reply-date">{new Date(comment.date).toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                                </div>
+                                                <div className="reply-body">{comment.comment}</div>
+                                                {(isAdmin || comment.username === session?.username) && (
+                                                    <div style={{ marginTop: '0.25rem' }}>
+                                                        <button 
+                                                            className="btn btn-sm deletebtn" 
+                                                            onClick={() => {
+                                                                if (window.confirm('Delete this comment?')) {
+                                                                    deleteEventCommentMutation.mutate(comment.commentid)
+                                                                }
+                                                            }}
+                                                            disabled={deleteEventCommentMutation.isPending}
+                                                            style={{ padding: '0.15rem 0.5rem', fontSize: '0.75rem' }}
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
                         <div className="actions">
                             {!event.accepted && isLeader && (<button onClick={() => eventActionMutation.mutate({ url: "/event/" + event.eventid, method: "put" })}>Accept Event</button>)}
                             {isAdmin && (<button className="deletebtn" onClick={() => eventActionMutation.mutate({ url: "/event/" + event.eventid, method: "delete" })}>Delete Event</button>)}
