@@ -68,11 +68,20 @@ const ClubPage = () => {
     const [eventComments, setEventComments] = useState({})
     const [eventCommentCounts, setEventCommentCounts] = useState({})
 
+    // SA (System Administrator) has all powers for ALL clubs
+    const isSA = useMemo(() => session?.role === 'SA', [session])
     const isAdmin = useMemo(() => {
+        if (isSA) return true
         return session && ['CL', 'VP'].includes(session.role) && session.club === clubName
-    }, [session, clubName])
-    const isLeader = useMemo(() => session && session.role === 'CL' && session.club === clubName, [session, clubName])
-    const isMember = useMemo(() => session && session.club === clubName && ['CL','VP','CM'].includes(session.role), [session, clubName])
+    }, [session, clubName, isSA])
+    const isLeader = useMemo(() => {
+        if (isSA) return true
+        return session && session.role === 'CL' && session.club === clubName
+    }, [session, clubName, isSA])
+    const isMember = useMemo(() => {
+        if (isSA) return true
+        return session && session.club === clubName && ['CL','VP','CM'].includes(session.role)
+    }, [session, clubName, isSA])
     const isPending = useMemo(() => session && session.club === clubName && session.role === 'STU', [session, clubName])
 
     // 1. Fetch Club
@@ -286,7 +295,11 @@ const ClubPage = () => {
         const selectedUsername = e.target.value
         if (!selectedUsername || selectedUsername === '') return
         
-        if (window.confirm(`Are you sure you want to transfer leadership to ${selectedUsername}? You will become Vice President.`)) {
+        const confirmMsg = isSA 
+            ? `Are you sure you want to transfer leadership to ${selectedUsername}? The current CL will become VP.`
+            : `Are you sure you want to transfer leadership to ${selectedUsername}? You will become Vice President.`
+        
+        if (window.confirm(confirmMsg)) {
             transferLeadershipMutation.mutate(selectedUsername)
         }
         e.target.value = '' // Reset selection
@@ -318,7 +331,12 @@ const ClubPage = () => {
                             <p className="club-description" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(club.description) }}></p>
                             <div className="club-actions">
                                 {isAdmin && <button><Link to={"/UpdateClub/" + clubName}>Update Info</Link></button>}
-                                {!isMember && !isPending && !session?.club && (
+                                {/* SA has full access - show system admin badge */}
+                                {isSA && (
+                                    <button className="btn-muted" disabled style={{ backgroundColor: '#fbbf24', color: '#000' }}>System Admin</button>
+                                )}
+                                {/* Regular join flow - not for SA */}
+                                {!isSA && !isMember && !isPending && !session?.club && (
                                     <button className="btn-primary" onClick={() => {
                                         if (!session) return navigate("/LogIn")
                                         joinClubMutation.mutate()
@@ -332,10 +350,10 @@ const ClubPage = () => {
                                         }}>Cancel Request</button>
                                     </>
                                 )}
-                                {isMember && (
+                                {!isSA && isMember && (
                                     <button className="btn-muted" disabled>Already a member</button>
                                 )}
-                                {session?.club && !isMember && !isPending && (
+                                {!isSA && session?.club && !isMember && !isPending && (
                                     <button className="btn" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
                                         {session?.role === 'STU' ? 'Pending elsewhere' : 'Already in a club'}
                                     </button>
@@ -616,7 +634,8 @@ const ClubPage = () => {
                                                 {p.role === "VP" && (<button onClick={() => memberActionMutation.mutate({ url: "/promote/" + p.username, body: { action: 'demote' } })} title="Demote to member">▼</button>)}
                                             </>
                                         )}
-                                        {isAdmin && p.role !== "CL" && p.username !== session?.username && !(p.role === 'VP' && session?.role === 'VP') && (
+                                        {/* SA can expel anyone except CL; CL/VP can expel CM; VP cannot expel other VPs */}
+                                        {isAdmin && p.role !== "CL" && p.username !== session?.username && (isSA || !(p.role === 'VP' && session?.role === 'VP')) && (
                                             <button className="deletebtn" onClick={() => memberActionMutation.mutate({ url: "/expell/" + p.username })} style={{margin: "0 0 0 0.5rem"}}>X</button>
                                         )}
                                     </td>
@@ -756,7 +775,8 @@ const ClubPage = () => {
                 <button><Link to={"../"}>Back</Link></button>
             </div>
             <div>
-                {!isMember && !isPending && !session?.club && (
+                {/* SA doesn't need to join - they have full access already */}
+                {!isSA && !isMember && !isPending && !session?.club && (
                     <button onClick={() => {
                         if (!session) return navigate("/LogIn")
                         joinClubMutation.mutate()
@@ -770,9 +790,11 @@ const ClubPage = () => {
                         }}>Cancel Request</button>
                     </>
                 )}
-                {isMember && !isLeader && <button className="deletebtn" onClick={() => {
+                {/* SA can't quit (not a member), but actual members who aren't CL can quit */}
+                {!isSA && isMember && !isLeader && <button className="deletebtn" onClick={() => {
                     if (window.confirm('Are you sure you want to quit this club?')) quitClubMutation.mutate()
                 }}>Quit club</button>}
+                {/* SA and CL can delete the club */}
                 {isLeader && <button className="deletebtn" onClick={() => {
                     if (window.confirm('Are you sure you want to delete this club?')) deleteClubMutation.mutate()
                 }}>Delete Club</button>}

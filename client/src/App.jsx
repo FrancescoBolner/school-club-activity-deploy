@@ -115,7 +115,10 @@ function AppContent({ session, unread, handleLogout }) {
               Notifications
               {unread > 0 && <span className="pill">{unread}</span>}
             </Link>
-            {session?.club ? (
+            {session?.role === 'SA' ? (
+              // SA can browse all clubs, no need for specific club link
+              <Link to="/">Browse Clubs</Link>
+            ) : session?.club ? (
               <Link className="chip-link" to={`/ClubPage/${session.club}`}>
                 My Club
               </Link>

@@ -19,7 +19,7 @@ CREATE TABLE `clubs` (
 CREATE TABLE `person` (
     `username` varchar(255) NOT NULL COMMENT 'Unique username for each person',
     `password` varchar(255) NOT NULL COMMENT 'Password hash for the user account (bcrypt)',
-    `role` text NOT NULL COMMENT 'Role of the person in the club (CL, VP, CM, STU)',
+    `role` text NOT NULL COMMENT 'Role of the person in the club (SA, CL, VP, CM, STU) - SA=System Admin has all CL powers for ALL clubs',
     `club` varchar(255) DEFAULT NULL COMMENT 'The club the person is associated with; NULL if not a member of any club; STU + club means pending membership',
     `sessionId` varchar(255) DEFAULT NULL COMMENT 'Session identifier for logged-in users; NULL if not logged in',
     PRIMARY KEY (`username`),
@@ -101,6 +101,7 @@ INSERT INTO clubs (`clubName`, `description`, `memberCount`, `memberMax`, `banne
 
 -- ===== PERSONS =====
 INSERT INTO person (`username`, `password`, `role`, `club`) VALUES
+('Admin','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK','SA',NULL),
 ('Francesco','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK','CL','Ski'),
 ('Samuele','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK','VP','Ski'),
 ('Ari','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK','CM','Ski'),

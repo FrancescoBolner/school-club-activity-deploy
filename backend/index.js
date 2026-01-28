@@ -87,6 +87,27 @@ const recalcMemberCount = async clubName => {
   )
 }
 
+// Helper to check if user is System Administrator
+const isSA = (user) => user?.role === 'SA'
+
+// Helper to check if user can perform CL actions on a specific club
+const canActAsCL = (user, clubName) => {
+  if (isSA(user)) return true
+  return user?.role === 'CL' && user?.club === clubName
+}
+
+// Helper to check if user can perform admin (CL/VP) actions on a specific club  
+const canActAsAdmin = (user, clubName) => {
+  if (isSA(user)) return true
+  return ['CL', 'VP'].includes(user?.role) && user?.club === clubName
+}
+
+// Helper to check if user is member of a club
+const canActAsMember = (user, clubName) => {
+  if (isSA(user)) return true
+  return ['CL', 'VP', 'CM'].includes(user?.role) && user?.club === clubName
+}
+
 const createNotification = async ({ username, senderUsername = null, clubName, type = 'info', message, link = null, replyTo = null }) => {
   if (!username || !message) return
   await dbp.query(
@@ -187,9 +208,9 @@ app.get('/events/:clubName', requireAuth, async (req, res) => {
   const like = `%${search}%`
 
   try {
-    // Only CL can see unaccepted events
-    const isClubLeader = req.user.role === 'CL' && req.user.club === clubName
-    const acceptedFilter = isClubLeader ? '' : ' AND accepted = 1'
+    // Only CL or SA can see unaccepted events
+    const canSeeUnaccepted = canActAsCL(req.user, clubName)
+    const acceptedFilter = canSeeUnaccepted ? '' : ' AND accepted = 1'
     
     const [rows] = await dbp.query(
       `SELECT * FROM events WHERE clubName = ? AND (title LIKE ? OR description LIKE ?)${acceptedFilter} ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
@@ -461,8 +482,8 @@ app.get('/eventComments/:eventid', requireAuth, async (req, res) => {
     const [[event]] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventid])
     if (!event) return res.status(404).json({ message: 'Event not found' })
     
-    // Allow access if user is a member of the club (CL, VP, CM)
-    const isMember = req.user.club === event.clubName && ['CL', 'VP', 'CM'].includes(req.user.role)
+    // Allow access if user is a member of the club (CL, VP, CM) or SA
+    const isMember = canActAsMember(req.user, event.clubName)
     if (!isMember) return res.status(403).json({ message: 'You must be a member of this club to view event comments' })
 
     const [rows] = await dbp.query(
@@ -501,7 +522,7 @@ app.post('/eventComment', requireAuth, async (req, res) => {
     const [[event]] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventid])
     if (!event) return res.status(404).json({ message: 'Event not found' })
     
-    const isMember = req.user.club === event.clubName && ['CL', 'VP', 'CM'].includes(req.user.role)
+    const isMember = canActAsMember(req.user, event.clubName)
     if (!isMember) return res.status(403).json({ message: 'You must be a member of this club to comment on events' })
 
     await dbp.query(
@@ -524,9 +545,9 @@ app.delete('/eventComment/:commentid', requireAuth, async (req, res) => {
     const [[comment]] = await dbp.query('SELECT username, eventid FROM comments WHERE commentid = ? AND eventid IS NOT NULL', [commentid])
     if (!comment) return res.status(404).json({ message: 'Event comment not found' })
     
-    // Check if user is comment author or club admin
+    // Check if user is comment author or club admin or SA
     const [[event]] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [comment.eventid])
-    const isAdmin = req.user.club === event.clubName && ['CL', 'VP'].includes(req.user.role)
+    const isAdmin = canActAsAdmin(req.user, event.clubName)
     const isAuthor = comment.username === req.user.username
     
     if (!isAdmin && !isAuthor) return res.status(403).json({ message: 'Not authorized to delete this comment' })
@@ -540,10 +561,13 @@ app.delete('/eventComment/:commentid', requireAuth, async (req, res) => {
 })
 
 // Create a new event
-app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch(req => req.body.clubName), async (req, res) => {
+app.post('/createEvent', requireAuth, async (req, res) => {
   const { title, description, startDate, endDate, clubName } = req.body
   console.log(`POST /createEvent - User: ${req.user?.username}, Event: ${title}, Club: ${clubName}`)
   if (!title || !description || !startDate || !clubName) return res.status(400).json({ message: 'Missing event fields' })
+  
+  // Check if user can act as admin (CL/VP) for this club
+  if (!canActAsAdmin(req.user, clubName)) return forbidden(res)
 
   try {
     // Convert datetime-local format to MySQL datetime format
@@ -579,9 +603,13 @@ app.post('/createEvent', requireAuth, requireRoles('CL', 'VP'), requireClubMatch
 })
 
 // Delete a club by clubName and reset members
-app.delete('/clubs/:clubName', requireAuth, requireRoles('CL'), requireClubMatch(req => req.params.clubName), async (req, res) => {
+app.delete('/clubs/:clubName', requireAuth, async (req, res) => {
   const clubName = req.params.clubName
   console.log(`DELETE /clubs/${clubName} - User: ${req.user?.username}`)
+  
+  // Only CL of this club or SA can delete
+  if (!canActAsCL(req.user, clubName)) return forbidden(res)
+  
   try {
     await dbp.query("UPDATE person SET role = 'STU', club = NULL WHERE club = ?", [clubName])
     await dbp.query("DELETE FROM clubs WHERE clubName = ?", [clubName])
@@ -602,7 +630,7 @@ app.delete('/comment/:commentid', requireAuth, async (req, res) => {
     const comment = rows[0]
 
     const isOwner = comment.username === req.user.username
-    const isClubAdmin = ['CL', 'VP'].includes(req.user.role) && (!req.user.club || req.user.club === comment.clubName)
+    const isClubAdmin = canActAsAdmin(req.user, comment.clubName)
 
     if (!isOwner && !isClubAdmin) return forbidden(res)
 
@@ -615,13 +643,15 @@ app.delete('/comment/:commentid', requireAuth, async (req, res) => {
 })
 
 // Delete a event by eventId
-app.delete('/event/:eventid', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+app.delete('/event/:eventid', requireAuth, async (req, res) => {
   const eventId = req.params.eventid
   console.log(`DELETE /event/${eventId} - User: ${req.user?.username}`)
   try {
     const [rows] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventId])
     if (rows.length === 0) return res.status(404).json({ message: 'Event not found' })
-    if (req.user.club && req.user.club !== rows[0].clubName) return forbidden(res)
+    
+    // Check if user can act as admin for this club
+    if (!canActAsAdmin(req.user, rows[0].clubName)) return forbidden(res)
 
     await dbp.query("DELETE FROM events WHERE eventid = ?", [eventId])
     return res.json({ message: "Event deleted successfully" })
@@ -631,14 +661,16 @@ app.delete('/event/:eventid', requireAuth, requireRoles('CL', 'VP'), async (req,
   }
 })
 
-// Accept a event by eventId (CL only per user story)
-app.put('/event/:eventid', requireAuth, requireRoles('CL'), async (req, res) => {
+// Accept a event by eventId (CL or SA only per user story)
+app.put('/event/:eventid', requireAuth, async (req, res) => {
   const eventId = req.params.eventid
   console.log(`PUT /event/${eventId} - User: ${req.user?.username} - Accepting event`)
   try {
     const [rows] = await dbp.query('SELECT clubName, title FROM events WHERE eventid = ?', [eventId])
     if (rows.length === 0) return res.status(404).json({ message: 'Event not found' })
-    if (req.user.club && req.user.club !== rows[0].clubName) return forbidden(res)
+    
+    // Only CL of this club or SA can accept events
+    if (!canActAsCL(req.user, rows[0].clubName)) return forbidden(res)
     
     const clubName = rows[0].clubName
     const eventTitle = rows[0].title
@@ -667,11 +699,15 @@ app.put('/event/:eventid', requireAuth, requireRoles('CL'), async (req, res) => 
   }
 })
 
-// Update club details (only CL can change description and memberMax)
-app.post('/updateClub/:clubName', requireAuth, requireRoles('CL'), requireClubMatch(req => req.params.clubName), async (req, res) => {
+// Update club details (only CL or SA can change description and memberMax)
+app.post('/updateClub/:clubName', requireAuth, async (req, res) => {
   const clubName = req.params.clubName
   const { description, memberMax, bannerImage, bannerColor } = req.body
   console.log(`POST /updateClub/${clubName} - User: ${req.user?.username}`)
+  
+  // Only CL of this club or SA can update
+  if (!canActAsCL(req.user, clubName)) return forbidden(res)
+  
   if (!memberMax) return res.status(400).json({ message: 'Missing fields' })
   const maxMembers = Number(memberMax)
   if (Number.isNaN(maxMembers) || maxMembers < 1) return res.status(400).json({ message: 'memberMax must be positive' })
@@ -713,13 +749,15 @@ app.put('/joinClubs/:clubName', requireAuth, async (req, res) => {
   }
 })
 
-app.put('/expell/:username', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+app.put('/expell/:username', requireAuth, async (req, res) => {
   const username = req.params.username
   console.log(`PUT /expell/${username} - User: ${req.user?.username}`)
   try {
     const [rows] = await dbp.query('SELECT club FROM person WHERE username = ?', [username])
     if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
-    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
+    
+    // Check if user can act as admin for the target user's club
+    if (!canActAsAdmin(req.user, rows[0].club)) return forbidden(res)
 
     await dbp.query("UPDATE person SET club = NULL, role = 'STU' WHERE username = ?", [username])
     await recalcMemberCount(rows[0].club)
@@ -731,13 +769,15 @@ app.put('/expell/:username', requireAuth, requireRoles('CL', 'VP'), async (req, 
   }
 })
 
-app.put('/accept/:username', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+app.put('/accept/:username', requireAuth, async (req, res) => {
   const username = req.params.username
   console.log(`PUT /accept/${username} - User: ${req.user?.username}`)
   try {
     const [rows] = await dbp.query('SELECT club FROM person WHERE username = ?', [username])
     if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
-    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
+    
+    // Check if user can act as admin for the target user's club
+    if (!canActAsAdmin(req.user, rows[0].club)) return forbidden(res)
 
     const [clubRows] = await dbp.query('SELECT memberCount, memberMax FROM clubs WHERE clubName = ?', [rows[0].club])
     if (clubRows.length && clubRows[0].memberCount >= clubRows[0].memberMax) return res.status(400).json({ message: 'Club is full' })
@@ -752,13 +792,15 @@ app.put('/accept/:username', requireAuth, requireRoles('CL', 'VP'), async (req, 
   }
 })
 
-app.put('/reject/:username', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+app.put('/reject/:username', requireAuth, async (req, res) => {
   const username = req.params.username
   console.log(`PUT /reject/${username} - User: ${req.user?.username}`)
   try {
     const [rows] = await dbp.query('SELECT club FROM person WHERE username = ?', [username])
     if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
-    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
+    
+    // Check if user can act as admin for the target user's club
+    if (!canActAsAdmin(req.user, rows[0].club)) return forbidden(res)
 
     await dbp.query("UPDATE person SET club = NULL WHERE username = ?", [username])
     await recalcMemberCount(rows[0].club)
@@ -816,14 +858,16 @@ app.delete('/quitClub', requireAuth, async (req, res) => {
 })
 
 // Promote a member to VP or demote VP to CM by username
-app.put('/promote/:username', requireAuth, requireRoles('CL'), async (req, res) => {
+app.put('/promote/:username', requireAuth, async (req, res) => {
   const username = req.params.username
   const { action } = req.body // 'promote' or 'demote'
   console.log(`PUT /promote/${username} - User: ${req.user?.username}, Action: ${action}`)
   try {
     const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [username])
     if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
-    if (req.user.club && req.user.club !== rows[0].club) return forbidden(res)
+    
+    // Only CL of this club or SA can promote/demote
+    if (!canActAsCL(req.user, rows[0].club)) return forbidden(res)
 
     let newRole, message
     if (action === 'demote' && rows[0].role === 'VP') {
@@ -844,14 +888,44 @@ app.put('/promote/:username', requireAuth, requireRoles('CL'), async (req, res) 
   }
 })
 
-// Transfer club leadership (CL only)
-app.put('/transferLeadership/:username', requireAuth, requireRoles('CL'), async (req, res) => {
+// Transfer club leadership (CL or SA only)
+app.put('/transferLeadership/:username', requireAuth, async (req, res) => {
   const newLeaderUsername = req.params.username
   console.log(`PUT /transferLeadership/${newLeaderUsername} - User: ${req.user?.username}`)
   try {
     const [rows] = await dbp.query('SELECT club, role FROM person WHERE username = ?', [newLeaderUsername])
     if (rows.length === 0) return res.status(404).json({ message: 'User not found' })
-    if (!req.user.club || req.user.club !== rows[0].club) return res.status(400).json({ message: 'User must be in your club' })
+    
+    const targetClub = rows[0].club
+    
+    // SA can transfer leadership for any club, CL only for their own club
+    if (isSA(req.user)) {
+      // SA is transferring - they don't become VP
+      if (!['CM', 'VP'].includes(rows[0].role)) return res.status(400).json({ message: 'User must be a club member (CM or VP)' })
+      if (!targetClub) return res.status(400).json({ message: 'User must be in a club' })
+      
+      // Get current CL of the target club
+      const [[currentCL]] = await dbp.query("SELECT username FROM person WHERE club = ? AND role = 'CL'", [targetClub])
+      
+      // Transfer leadership: new leader becomes CL, old leader becomes VP
+      await dbp.query("UPDATE person SET role = 'CL' WHERE username = ?", [newLeaderUsername])
+      if (currentCL) {
+        await dbp.query("UPDATE person SET role = 'VP' WHERE username = ?", [currentCL.username])
+      }
+      
+      await createNotification({ 
+        username: newLeaderUsername, 
+        clubName: targetClub, 
+        type: 'membership', 
+        message: `You are now the Club Leader of ${targetClub}` 
+      })
+      
+      return res.json({ message: 'Leadership transferred successfully' })
+    }
+    
+    // Regular CL transfer
+    if (req.user.role !== 'CL') return forbidden(res)
+    if (!req.user.club || req.user.club !== targetClub) return res.status(400).json({ message: 'User must be in your club' })
     if (!['CM', 'VP'].includes(rows[0].role)) return res.status(400).json({ message: 'User must be a club member (CM or VP)' })
     if (newLeaderUsername === req.user.username) return res.status(400).json({ message: 'Cannot transfer leadership to yourself' })
 
@@ -1078,11 +1152,15 @@ app.get('/notifications/unreadCount', requireAuth, async (req, res) => {
   }
 })
 
-app.post('/notifications', requireAuth, requireRoles('CL', 'VP'), async (req, res) => {
+app.post('/notifications', requireAuth, async (req, res) => {
   const { username, clubName, type, message, link } = req.body
   console.log(`POST /notifications - User: ${req.user?.username}, To: ${username}`)
   if (!username || !message) return res.status(400).json({ message: 'Username and message required' })
-  if (clubName && req.user.club && req.user.club !== clubName) return forbidden(res)
+  
+  // SA can send to any club, CL/VP only to their own club
+  if (!isSA(req.user) && !['CL', 'VP'].includes(req.user.role)) return forbidden(res)
+  if (!isSA(req.user) && clubName && req.user.club && req.user.club !== clubName) return forbidden(res)
+  
   try {
     await createNotification({ username, clubName, type, message, link })
     return res.status(201).json({ message: 'Notification sent' })
@@ -1158,17 +1236,22 @@ app.post('/sendEmail', requireAuth, async (req, res) => {
   const notificationType = type && ['event', 'membership', 'email'].includes(type) ? type : 'email'
   
   try {
-    // Check if user is CL/VP for sending to all club members
+    // Check if user is CL/VP or SA for sending to all club members
     if (sendToAllClub) {
-      if (!['CL', 'VP'].includes(req.user.role) || !req.user.club) {
-        return res.status(403).json({ message: 'Only Club Leaders and Vice Presidents can send to all members' })
+      // SA can send to any club (but need to specify which one), CL/VP to their own
+      const targetClub = req.body.targetClub || req.user.club
+      if (!isSA(req.user) && (!['CL', 'VP'].includes(req.user.role) || !req.user.club)) {
+        return res.status(403).json({ message: 'Only Club Leaders, Vice Presidents, and System Administrators can send to all members' })
+      }
+      if (!targetClub) {
+        return res.status(400).json({ message: 'Target club required for sending to all members' })
       }
       
       // Create single club-wide notification with username=NULL
       await dbp.query(
         `INSERT INTO notifications (username, senderUsername, clubName, type, message, link, isRead, createdAt) 
          VALUES (NULL, ?, ?, ?, ?, ?, 1, NOW())`,
-        [req.user.username, req.user.club, notificationType, message, link || null]
+        [req.user.username, targetClub, notificationType, message, link || null]
       )
       
       return res.status(201).json({ message: `Email sent to all club members` })
@@ -1195,13 +1278,19 @@ app.post('/sendEmail', requireAuth, async (req, res) => {
   }
 })
 
-app.get('/clubMembers', requireAuth, requireRoles('CL', 'VP', 'CM'), async (req, res) => {
+app.get('/clubMembers', requireAuth, async (req, res) => {
   console.log(`GET /clubMembers - User: ${req.user?.username}`)
   try {
-    if (!req.user.club) return res.status(400).json({ message: 'You are not part of a club' })
+    // SA can see members of any club (via query param), others see their own club
+    const targetClub = req.query.club || req.user.club
+    
+    if (!isSA(req.user) && !['CL', 'VP', 'CM'].includes(req.user.role)) return forbidden(res)
+    if (!isSA(req.user) && !req.user.club) return res.status(400).json({ message: 'You are not part of a club' })
+    if (!targetClub) return res.status(400).json({ message: 'Club not specified' })
+    
     const [members] = await dbp.query(
       "SELECT username, role FROM person WHERE club = ? AND role IN ('CL', 'VP', 'CM') ORDER BY role, username",
-      [req.user.club]
+      [targetClub]
     )
     return res.json(members)
   } catch (err) {
