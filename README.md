@@ -14,6 +14,7 @@ School Club Activity Showcase is a full-stack web application that enables stude
 | **Member** | Participate in club events and activities |
 | **Vice-President** | Assist with club management and event creation |
 | **Leader** | Full club administration, member management, event approval |
+| **System-Administrator** | Manage the hole website to ensure safty and order |
 
 ### Key Features
 
