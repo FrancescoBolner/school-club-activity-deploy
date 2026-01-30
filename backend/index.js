@@ -579,10 +579,10 @@ app.post('/comment', requireAuth, async (req, res) => {
   }
 })
 
-// Get event comments with optional search/order/pagination (requires club membership)
-app.get('/eventComments/:eventid', requireAuth, async (req, res) => {
+// Get event comments with optional search/order/pagination (public - everyone can view)
+app.get('/eventComments/:eventid', async (req, res) => {
   const eventid = parseInt(req.params.eventid)
-  console.log(`GET /eventComments/${eventid} - User: ${req.user?.username}`)
+  console.log(`GET /eventComments/${eventid}`)
   
   const { search, orderKey, direction, limit, page, offset } = buildPagination(
     req.query,
@@ -592,13 +592,9 @@ app.get('/eventComments/:eventid', requireAuth, async (req, res) => {
   const like = `%${search}%`
 
   try {
-    // Check if user is a member of the club that owns this event
+    // Verify event exists
     const [[event]] = await dbp.query('SELECT clubName FROM events WHERE eventid = ?', [eventid])
     if (!event) return res.status(404).json({ message: 'Event not found' })
-    
-    // Allow access if user is a member of the club (CL, VP, CM) or SA
-    const isMember = canActAsMember(req.user, event.clubName)
-    if (!isMember) return res.status(403).json({ message: 'You must be a member of this club to view event comments' })
 
     const [rows] = await dbp.query(
       `SELECT * FROM comments WHERE eventid = ? AND (comment LIKE ? OR username LIKE ?) ORDER BY ${orderKey} ${direction} LIMIT ? OFFSET ?`,
@@ -1118,8 +1114,9 @@ app.get('/notifications', requireAuth, async (req, res) => {
   const unreadFilter = req.query.unread === 'true' ? ' AND isRead = 0' : ''
   // For mixed mailboxes (all/inbox), need different filter to handle club-wide notifications
   // For club-wide: check notification_reads.readAt IS NULL (unread) or readAt IS NOT NULL (read)
+  // Also exclude sent club-wide emails from unread filter (sender should see them as read)
   const mixedUnreadFilter = req.query.unread === 'true' 
-    ? ' AND ((n.username IS NOT NULL AND n.isRead = 0) OR (n.username IS NULL AND nr_check.readAt IS NULL))' 
+    ? ' AND ((n.username IS NOT NULL AND n.isRead = 0) OR (n.username IS NULL AND nr_check.readAt IS NULL AND n.senderUsername != ?))' 
     : ''
   const mailbox = req.query.mailbox || 'inbox'
   
@@ -1153,6 +1150,11 @@ app.get('/notifications', requireAuth, async (req, res) => {
       total = convTotal
     } else if (mailbox === 'sent') {
       // Show sent person-to-person emails - all sent parent messages + conversations with at least one sent message (no club-wide)
+      // When filtering by unread, sent items should not appear (sender always considers them "read")
+      if (req.query.unread === 'true') {
+        rows = []
+        total = 0
+      } else {
       const [sentRows] = await dbp.query(
         `SELECT DISTINCT n.*, 1 as recipientCount,
                 COALESCE((SELECT MAX(r.createdAt) FROM notifications r WHERE r.replyTo = n.notificationid), n.createdAt) as lastReplyTime
@@ -1184,10 +1186,16 @@ app.get('/notifications', requireAuth, async (req, res) => {
       )
       rows = sentRows
       total = sentTotal
+      }
     } else if (mailbox === 'club') {
       // Show club-wide emails that user was a recipient of OR sent (based on notification_reads and senderUsername)
       // readAt IS NULL = unread, readAt IS NOT NULL = read
-      const clubUnreadFilter = req.query.unread === 'true' ? ' AND nr.readAt IS NULL' : ''
+      // For sent emails, sender should always see them as read (exclude from unread filter)
+      // Key: when sender has no notification_reads entry, nr.readAt is NULL, but we still want to exclude sent items
+      const clubUnreadFilter = req.query.unread === 'true' ? ' AND nr.readAt IS NULL AND n.senderUsername != ?' : ''
+      const clubUnreadParams = req.query.unread === 'true' 
+        ? [req.user.username, like, like, req.user.username, req.user.username, limit, offset]
+        : [req.user.username, like, like, req.user.username, limit, offset]
       const [clubRows] = await dbp.query(
         `SELECT n.*, 1 as recipientCount, (nr.readAt IS NOT NULL) as isReadByUser
          FROM notifications n
@@ -1198,8 +1206,11 @@ app.get('/notifications', requireAuth, async (req, res) => {
            AND n.type != 'report'
            AND (nr.username IS NOT NULL OR n.senderUsername = ?)
          ORDER BY n.${orderKey} ${direction} LIMIT ? OFFSET ?`,
-        [req.user.username, like, like, req.user.username, limit, offset]
+        clubUnreadParams
       )
+      const clubCountParams = req.query.unread === 'true' 
+        ? [req.user.username, like, like, req.user.username, req.user.username]
+        : [req.user.username, like, like, req.user.username]
       const [[{ total: clubTotal }]] = await dbp.query(
         `SELECT COUNT(DISTINCT n.notificationid) AS total 
          FROM notifications n
@@ -1209,7 +1220,7 @@ app.get('/notifications', requireAuth, async (req, res) => {
            AND n.username IS NULL
            AND n.type != 'report'
            AND (nr.username IS NOT NULL OR n.senderUsername = ?)`,
-        [req.user.username, like, like, req.user.username]
+        clubCountParams
       )
       // Map isReadByUser to isRead for consistency with frontend
       // For sent club-wide emails, mark as read since sender sent it
@@ -1223,7 +1234,11 @@ app.get('/notifications', requireAuth, async (req, res) => {
       if (!isSA(req.user)) {
         return res.status(403).json({ message: 'Only System Administrators can view reports' })
       }
-      const reportUnreadFilter = req.query.unread === 'true' ? ' AND nr.readAt IS NULL' : ''
+      // For sent reports, sender should always see them as read (exclude from unread filter)
+      const reportUnreadFilter = req.query.unread === 'true' ? ' AND nr.readAt IS NULL AND n.senderUsername != ?' : ''
+      const reportParams = req.query.unread === 'true'
+        ? [req.user.username, like, like, req.user.username, req.user.username, limit, offset]
+        : [req.user.username, like, like, req.user.username, limit, offset]
       const [reportRows] = await dbp.query(
         `SELECT n.*, 1 as recipientCount, (nr.readAt IS NOT NULL) as isReadByUser
          FROM notifications n
@@ -1233,8 +1248,11 @@ app.get('/notifications', requireAuth, async (req, res) => {
            AND (n.message LIKE ? OR n.type LIKE ?)${reportUnreadFilter}
            AND (nr.username IS NOT NULL OR n.senderUsername = ?)
          ORDER BY n.${orderKey} ${direction} LIMIT ? OFFSET ?`,
-        [req.user.username, like, like, req.user.username, limit, offset]
+        reportParams
       )
+      const reportCountParams = req.query.unread === 'true'
+        ? [req.user.username, like, like, req.user.username, req.user.username]
+        : [req.user.username, like, like, req.user.username]
       const [[{ total: reportTotal }]] = await dbp.query(
         `SELECT COUNT(DISTINCT n.notificationid) AS total 
          FROM notifications n
@@ -1243,7 +1261,7 @@ app.get('/notifications', requireAuth, async (req, res) => {
            AND n.type = 'report'
            AND (n.message LIKE ? OR n.type LIKE ?)${reportUnreadFilter}
            AND (nr.username IS NOT NULL OR n.senderUsername = ?)`,
-        [req.user.username, like, like, req.user.username]
+        reportCountParams
       )
       rows = reportRows.map(row => ({ 
         ...row, 
@@ -1253,9 +1271,10 @@ app.get('/notifications', requireAuth, async (req, res) => {
     } else if (mailbox === 'all') {
       // Show both inbox and sent - all messages user is involved in
       // For club-wide: check notification_reads table (readAt IS NULL = unread)
+      // Parameter order: isReadByUser subquery, LEFT JOIN, 2x LIKE, [mixedUnreadFilter if unread], username=?, senderUsername=?, EXISTS r.username, EXISTS r.senderUsername
       const allParams = req.query.unread === 'true' 
         ? [req.user.username, req.user.username, like, like, req.user.username, req.user.username, req.user.username, req.user.username, req.user.username]
-        : [req.user.username, like, like, req.user.username, req.user.username, req.user.username, req.user.username, req.user.username]
+        : [req.user.username, req.user.username, like, like, req.user.username, req.user.username, req.user.username, req.user.username]
       const [allRows] = await dbp.query(
         `SELECT DISTINCT n.*, 1 as recipientCount,
                 COALESCE((SELECT MAX(r.createdAt) FROM notifications r WHERE r.replyTo = n.notificationid), n.createdAt) as lastReplyTime,
@@ -1283,8 +1302,9 @@ app.get('/notifications', requireAuth, async (req, res) => {
     } else {
       // Default: inbox - all received person-to-person messages + conversations with at least one received message + club-wide emails user received
       // For club-wide: check notification_reads table (readAt IS NULL = unread)
+      // Params: isReadByUser subquery, LEFT JOIN, 2x LIKE, [mixedUnreadFilter if unread], username=?, EXISTS username, limit, offset
       const inboxParams = req.query.unread === 'true' 
-        ? [req.user.username, req.user.username, req.user.username, like, like, req.user.username, req.user.username, req.user.username, limit, offset]
+        ? [req.user.username, req.user.username, like, like, req.user.username, req.user.username, req.user.username, limit, offset]
         : [req.user.username, req.user.username, like, like, req.user.username, req.user.username, limit, offset]
       const [inboxRows] = await dbp.query(
         `SELECT DISTINCT n.*, 1 as recipientCount,
@@ -1306,9 +1326,10 @@ app.get('/notifications', requireAuth, async (req, res) => {
          ORDER BY ${orderKey === 'created' ? 'lastReplyTime' : 'n.' + orderKey} ${direction} LIMIT ? OFFSET ?`,
         inboxParams
       )
+      // Params: LEFT JOIN, 2x LIKE, [mixedUnreadFilter if unread], username=?, EXISTS username
       const inboxCountParams = req.query.unread === 'true' 
-        ? [req.user.username, req.user.username, like, like, req.user.username, req.user.username, req.user.username]
-        : [req.user.username, like, like, req.user.username, req.user.username, req.user.username]
+        ? [req.user.username, like, like, req.user.username, req.user.username, req.user.username]
+        : [req.user.username, like, like, req.user.username, req.user.username]
       const [[{ total: inboxTotal }]] = await dbp.query(
         `SELECT COUNT(DISTINCT n.notificationid) AS total 
          FROM notifications n

@@ -128,7 +128,7 @@ const ClubPage = () => {
 
     // Fetch comment counts for all events when events change
     useMemo(() => {
-        if (events.length > 0 && isMember) {
+        if (events.length > 0) {
             events.forEach(event => {
                 if (event.accepted && eventCommentCounts[event.eventid] === undefined) {
                     api.get(`/eventComments/${event.eventid}`)
@@ -140,7 +140,7 @@ const ClubPage = () => {
                 }
             })
         }
-    }, [events, isMember])
+    }, [events])
 
     // 4. Fetch Comments (Infinite)
     const {
@@ -466,23 +466,25 @@ const ClubPage = () => {
                         </div>
                         <p className="event-description">{event.description}</p>
                         
-                        {/* Event Comment Section - Similar to Notification Replies */}
-                        {!!isMember && !!event.accepted && (
+                        {/* Event Comment Section - Everyone can view, only members can comment */}
+                        {!!event.accepted && (isMember || !!eventCommentCounts[event.eventid]) && (
                             <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--muted)' }}>
                                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                    <button 
-                                        className="btn btn-sm" 
-                                        onClick={() => {
-                                            const currentForm = eventCommentForm[event.eventid] || ''
-                                            if (!currentForm) {
-                                                setEventCommentForm(prev => ({ ...prev, [event.eventid]: '' }))
-                                            } else {
-                                                setEventCommentForm(prev => ({ ...prev, [event.eventid]: undefined }))
-                                            }
-                                        }}
-                                    >
-                                        Comment
-                                    </button>
+                                    {!!isMember && (
+                                        <button 
+                                            className="btn btn-sm" 
+                                            onClick={() => {
+                                                const currentForm = eventCommentForm[event.eventid] || ''
+                                                if (!currentForm) {
+                                                    setEventCommentForm(prev => ({ ...prev, [event.eventid]: '' }))
+                                                } else {
+                                                    setEventCommentForm(prev => ({ ...prev, [event.eventid]: undefined }))
+                                                }
+                                            }}
+                                        >
+                                            Comment
+                                        </button>
+                                    )}
                                     {!!eventCommentCounts[event.eventid] && (<button 
                                         className="btn-ghost btn-sm" 
                                         onClick={() => toggleEventComments(event.eventid)}
