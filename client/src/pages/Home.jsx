@@ -101,9 +101,10 @@ const Home = () => {
             <div className="clubs">
                 {<BrowseClubs />}
             </div>
-            {!session?.club && (
+            {/* Show Create Club option for users who aren't CL of any club */}
+            {!session?.memberships?.some(m => m.role === 'CL') && (
                 <div className="createClub">
-                    <h4 style={{marginBottom: "10px"}}>No club interest you?</h4>
+                    <h4 style={{marginBottom: "10px"}}>{session?.isAdmin ? 'Create a new club.' : 'No club interest you?'}</h4>
                     <button><Link to={"/CreateClub"}>Create Club</Link></button>
                 </div>
             )}
@@ -185,7 +186,7 @@ const Home = () => {
                                     <span className="event-date">{formatDateRange(event.startDate, event.endDate)}</span>
                                 </div>
                             </div>
-                            {session.club === event.clubName && (
+                            {session?.memberships?.some(m => m.clubName === event.clubName) && (
                                 <button className="btn-ghost btn-sm" type="button" onClick={() => downloadICS(event)}>
                                     Add to calendar
                                 </button>

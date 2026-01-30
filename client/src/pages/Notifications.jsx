@@ -12,11 +12,12 @@ const Notifications = () => {
   const session = getSession()
   const queryClient = useQueryClient()
   
-  const [filters, setFilters] = useState({ search: "", orderBy: "created", order: "desc", page: 1, limit: 6, unread: 'all', mailbox: 'inbox' })
+  const defoaltMailbox = session?.isAdmin ? 'report' : 'inbox'
+  const [filters, setFilters] = useState({ search: "", groupBy: "created", order: "desc", page: 1, limit: 6, unread: 'all', mailbox: defoaltMailbox || 'inbox' })
   const [filterOpen, setFilterOpen] = useState(false)
   
   const [emailFormOpen, setEmailFormOpen] = useState(false)
-  const [emailForm, setEmailForm] = useState({ recipient: "", message: "", sendToAllClub: false, type: "email", link: "", linkToClub: false, targetClub: "" })
+  const [emailForm, setEmailForm] = useState({ recipient: "", message: "", sendToAllClub: false, sendReport: false, type: "email", link: "", linkToClub: false, targetClub: "" })
   const [recipientSearch, setRecipientSearch] = useState("")
   const [showSuggestions, setShowSuggestions] = useState(false)
   
@@ -24,8 +25,9 @@ const Notifications = () => {
   const [showReplies, setShowReplies] = useState({})
 
   // SA has all admin powers
-  const isSA = useMemo(() => session?.role === 'SA', [session?.role])
-  const isAdmin = useMemo(() => isSA || ['CL', 'VP'].includes(session?.role), [session?.role, isSA])
+  const isSA = useMemo(() => session?.isAdmin === true, [session?.isAdmin])
+  // User is admin if they are CL or VP of any club
+  const isAdmin = useMemo(() => isSA || session?.memberships?.some(m => ['CL', 'VP'].includes(m.role)), [session?.memberships, isSA])
 
   // 1. Fetch Notifications
   const { data: notificationsData, isLoading: loadingNotifications } = useQuery({
@@ -33,7 +35,7 @@ const Notifications = () => {
     queryFn: () => {
         const params = {
             q: filters.search,
-            orderBy: filters.orderBy,
+            groupBy: filters.groupBy,
             order: filters.order,
             limit: filters.limit,
             page: filters.page,
@@ -42,7 +44,7 @@ const Notifications = () => {
         if (filters.unread === 'unread') params.unread = true
         return api.get("/notifications", { params }).then(res => res.data)
     },
-    placeholderData: keepPreviousData,
+    staleTime: 0,
     enabled: !!session
   })
 
@@ -73,8 +75,11 @@ const Notifications = () => {
   const sendEmailMutation = useMutation({
     mutationFn: (data) => api.post("/sendEmail", data),
     onSuccess: () => {
-        alert(emailForm.sendToAllClub ? "Email sent to all club members!" : "Email sent successfully!")
-        setEmailForm({ recipient: "", message: "", sendToAllClub: false, type: "email", link: "", linkToClub: false, targetClub: "" })
+        const successMsg = emailForm.sendReport ? "Report sent to all admins!" : 
+                          emailForm.sendToAllClub ? "Email sent to all club members!" : 
+                          "Email sent successfully!"
+        alert(successMsg)
+        setEmailForm({ recipient: "", message: "", sendToAllClub: false, sendReport: false, type: "email", link: "", linkToClub: false, targetClub: "" })
         setRecipientSearch("")
         setEmailFormOpen(false)
         queryClient.invalidateQueries(['notifications'])
@@ -119,10 +124,24 @@ const Notifications = () => {
   const handleSendEmail = (e) => {
     e.preventDefault()
     if (!emailForm.message) return alert("Message is required")
+    
+    // Report mail validation
+    if (emailForm.sendReport) {
+      const emailData = {
+        sendReport: true,
+        message: emailForm.message,
+        type: "report"
+      }
+      sendEmailMutation.mutate(emailData)
+      return
+    }
+    
     if (!emailForm.sendToAllClub && !emailForm.recipient) return alert("Please select a recipient or choose to send to all club members")
     
-    // SA must select a target club when sending to all
-    if (emailForm.sendToAllClub && isSA && !emailForm.targetClub) return alert("Please select a club to send to")
+    // Check if user needs to select a target club (SA or VP with multiple clubs)
+    const adminClubs = session?.memberships?.filter(m => ['CL', 'VP'].includes(m.role)) || []
+    const needsClubSelection = emailForm.sendToAllClub && (isSA || adminClubs.length > 1)
+    if (needsClubSelection && !emailForm.targetClub) return alert("Please select a club to send to")
     
     // Prepare the data to send
     const emailData = {
@@ -130,11 +149,12 @@ const Notifications = () => {
       message: emailForm.message,
       sendToAllClub: emailForm.sendToAllClub,
       type: emailForm.type,
-      targetClub: emailForm.targetClub // For SA to specify which club
+      targetClub: emailForm.targetClub // For SA or VP to specify which club
     }
     
     // Add link if provided or if linking to club
-    const linkClub = isSA && emailForm.targetClub ? emailForm.targetClub : session?.club
+    const userClubMembership = session?.memberships?.filter(m => ['CL', 'VP'].includes(m.role))
+    const linkClub = emailForm.targetClub || userClubMembership?.clubName
     if (emailForm.linkToClub && linkClub) {
       emailData.link = `/ClubPage/${encodeURIComponent(linkClub)}`
     } else if (emailForm.link) {
@@ -160,6 +180,7 @@ const Notifications = () => {
           value={filters.mailbox} 
           onChange={(e) => updateFilter("mailbox", e.target.value)}
         >
+          {isSA && <option value="report">🚩 Report</option>}
           <option value="inbox">📥 Inbox</option>
           <option value="sent">📤 Sent</option>
           <option value="club">🏢 Club</option>
@@ -175,20 +196,33 @@ const Notifications = () => {
         <div className="email-form">
           <h3>Send Email</h3>
           <form onSubmit={handleSendEmail}>
-            {isAdmin && (
+            {!isSA && (
+              <div>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={emailForm.sendReport}
+                    onChange={(e) => setEmailForm({ ...emailForm, sendReport: e.target.checked, sendToAllClub: false, recipient: "" })}
+                  />
+                  Send report to all admins
+                </label>
+              </div>
+            )}
+            
+            {isAdmin && !emailForm.sendReport && (
               <div>
                 <label>
                   <input
                     type="checkbox"
                     checked={emailForm.sendToAllClub}
-                    onChange={(e) => setEmailForm({ ...emailForm, sendToAllClub: e.target.checked, recipient: "" })}
+                    onChange={(e) => setEmailForm({ ...emailForm, sendToAllClub: e.target.checked, sendReport: false, recipient: "" })}
                   />
                   Send to all club members
                 </label>
               </div>
             )}
             
-            {isAdmin && emailForm.sendToAllClub && (
+            {isAdmin && emailForm.sendToAllClub && !emailForm.sendReport && (
               <div>
                 <label>Notification Type:</label>
                 <select
@@ -202,8 +236,8 @@ const Notifications = () => {
               </div>
             )}
             
-            {/* SA needs to select which club to send to */}
-            {isSA && emailForm.sendToAllClub && (
+            {/* SA or VP with multiple clubs needs to select which club to send to */}
+            {emailForm.sendToAllClub && !emailForm.sendReport && (isSA || session?.memberships?.filter(m => ['CL', 'VP'].includes(m.role)).length > 1) && (
               <div>
                 <label>Target Club:</label>
                 <select
@@ -212,14 +246,20 @@ const Notifications = () => {
                   required
                 >
                   <option value="">Select a club...</option>
-                  {clubsList.map(club => (
-                    <option key={club.clubName} value={club.clubName}>{club.clubName}</option>
-                  ))}
+                  {isSA ? (
+                    clubsList.map(club => (
+                      <option key={club.clubName} value={club.clubName}>{club.clubName}</option>
+                    ))
+                  ) : (
+                    session?.memberships?.filter(m => ['CL', 'VP'].includes(m.role)).map(m => (
+                      <option key={m.clubName} value={m.clubName}>{m.clubName}</option>
+                    ))
+                  )}
                 </select>
               </div>
             )}
             
-            {!emailForm.sendToAllClub && (
+            {!emailForm.sendToAllClub && !emailForm.sendReport && (
               <div style={{ position: 'relative' }}>
                 <label>Recipient:</label>
                 <input
@@ -233,32 +273,16 @@ const Notifications = () => {
                   autoComplete="off"
                 />
                 {showSuggestions && userSuggestions.length > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    backgroundColor: 'white',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                    maxHeight: '200px',
-                    overflowY: 'auto',
-                    zIndex: 1000,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                  }}>
+                  <div className="recipient-suggestions">
                     {userSuggestions.map(user => (
                       <div
                         key={user.username}
                         onClick={() => selectUser(user.username)}
-                        style={{
-                          padding: '8px 12px',
-                          cursor: 'pointer',
-                          borderBottom: '1px solid #eee'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = '#f0f0f0'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
+                        className="suggestion-item"
+                        onMouseEnter={(e) => e.target.style.backgroundColor = "#0ea5e9"}
+                        onMouseLeave={(e) => e.target.style.backgroundColor = "transparent"}
                       >
-                        {user.username} ({user.role}{user.club ? ` - ${user.club}` : ''})
+                        {user.username}
                       </div>
                     ))}
                   </div>
@@ -277,7 +301,7 @@ const Notifications = () => {
               />
             </div>
 
-            {isAdmin && session?.club && (
+            {isAdmin && session?.memberships?.some(m => ['CL', 'VP'].includes(m.role)) && !emailForm.sendReport && (
               <div>
                 <label>
                   <input
@@ -290,7 +314,7 @@ const Notifications = () => {
               </div>
             )}
 
-            {!emailForm.linkToClub && (
+            {!emailForm.linkToClub && !emailForm.sendReport && (
               <div>
                 <label>Link (optional):</label>
                 <input
@@ -316,15 +340,15 @@ const Notifications = () => {
       {filterOpen && (
         <div className="filter-panel">
           <label>
-            Order by:
-            <select value={filters.orderBy} onChange={(e) => updateFilter("orderBy", e.target.value)}>
+            Group by:
+            <select value={filters.groupBy} onChange={(e) => updateFilter("groupBy", e.target.value)}>
               <option value="created">Date</option>
               <option value="type">Type</option>
               <option value="read">Read/Unread</option>
             </select>
           </label>
           <label>
-            Sort:
+            Order by:
             <select value={filters.order} onChange={(e) => updateFilter("order", e.target.value)}>
               <option value="desc">Newest</option>
               <option value="asc">Oldest</option>
@@ -396,10 +420,10 @@ const Notifications = () => {
               <span className="notification-date">{new Date(n.createdAt).toLocaleString('en-GB')}</span>
             </div>
             {n.senderUsername && !isSent && (
-              <div className="notification-sender">From: {n.senderUsername} {isClubWide ? 'to all club members' : ''}</div>
+              <div className="notification-sender">From: {n.senderUsername} {isClubWide && n.clubName ? 'to all club members' : ''}</div>
             )}
             {isSent && isClubWide && (
-              <div className="notification-sender">To: All members in {n.clubName}</div>
+              <div className="notification-sender">To: All {n.clubName ? `members in ${n.clubName}` : ' admins'}</div>
             )}
             {isSent && !isClubWide && n.username && (
               <div className="notification-sender">To: {n.username}</div>
