@@ -72,7 +72,7 @@ const LogIn = () => {
             Username
             <input
               type="text"
-              placeholder="e.g. Ben"
+              placeholder="Ben"
               name="username"
               value={credential.username}
               onChange={handleChange}
@@ -91,9 +91,9 @@ const LogIn = () => {
             />
           </label>
           <button type="submit" className="btn-primary">Login</button>
-          <p className="login-hint">Tip: use a student account (e.g. Ben / student123) to explore.</p>
+          <p className="login-hint">Tip: use Admin, Francesco, Samuele, and Ben to explore with different roles. All sample account have "password123".</p>
           <p className="login-hint">
-            New here? <Link className="link-cta" to="/SignUp">Create an account</Link>
+            New here?<br></br><Link className="link-cta" to="/SignUp">Create an account</Link>
           </p>
         </form>
       </div>

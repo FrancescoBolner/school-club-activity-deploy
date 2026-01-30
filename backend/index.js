@@ -1185,31 +1185,71 @@ app.get('/notifications', requireAuth, async (req, res) => {
       rows = sentRows
       total = sentTotal
     } else if (mailbox === 'club') {
-      // Show club-wide emails that user was a recipient of (based on notification_reads)
+      // Show club-wide emails that user was a recipient of OR sent (based on notification_reads and senderUsername)
       // readAt IS NULL = unread, readAt IS NOT NULL = read
       const clubUnreadFilter = req.query.unread === 'true' ? ' AND nr.readAt IS NULL' : ''
       const [clubRows] = await dbp.query(
         `SELECT n.*, 1 as recipientCount, (nr.readAt IS NOT NULL) as isReadByUser
          FROM notifications n
-         INNER JOIN notification_reads nr ON nr.notificationid = n.notificationid AND nr.username = ?
+         LEFT JOIN notification_reads nr ON nr.notificationid = n.notificationid AND nr.username = ?
          WHERE n.replyTo IS NULL
            AND (n.message LIKE ? OR n.type LIKE ?)${clubUnreadFilter}
            AND n.username IS NULL
+           AND n.type != 'report'
+           AND (nr.username IS NOT NULL OR n.senderUsername = ?)
          ORDER BY n.${orderKey} ${direction} LIMIT ? OFFSET ?`,
-        [req.user.username, like, like, limit, offset]
+        [req.user.username, like, like, req.user.username, limit, offset]
       )
       const [[{ total: clubTotal }]] = await dbp.query(
-        `SELECT COUNT(*) AS total 
+        `SELECT COUNT(DISTINCT n.notificationid) AS total 
          FROM notifications n
-         INNER JOIN notification_reads nr ON nr.notificationid = n.notificationid AND nr.username = ?
+         LEFT JOIN notification_reads nr ON nr.notificationid = n.notificationid AND nr.username = ?
          WHERE n.replyTo IS NULL
            AND (n.message LIKE ? OR n.type LIKE ?)${clubUnreadFilter}
-           AND n.username IS NULL`,
-        [req.user.username, like, like]
+           AND n.username IS NULL
+           AND n.type != 'report'
+           AND (nr.username IS NOT NULL OR n.senderUsername = ?)`,
+        [req.user.username, like, like, req.user.username]
       )
       // Map isReadByUser to isRead for consistency with frontend
-      rows = clubRows.map(row => ({ ...row, isRead: row.isReadByUser ? 1 : 0 }))
+      // For sent club-wide emails, mark as read since sender sent it
+      rows = clubRows.map(row => ({ 
+        ...row, 
+        isRead: row.senderUsername === req.user.username ? 1 : (row.isReadByUser ? 1 : 0) 
+      }))
       total = clubTotal
+    } else if (mailbox === 'report') {
+      // Only SA can view reports - show all report notifications
+      if (!isSA(req.user)) {
+        return res.status(403).json({ message: 'Only System Administrators can view reports' })
+      }
+      const reportUnreadFilter = req.query.unread === 'true' ? ' AND nr.readAt IS NULL' : ''
+      const [reportRows] = await dbp.query(
+        `SELECT n.*, 1 as recipientCount, (nr.readAt IS NOT NULL) as isReadByUser
+         FROM notifications n
+         LEFT JOIN notification_reads nr ON nr.notificationid = n.notificationid AND nr.username = ?
+         WHERE n.replyTo IS NULL
+           AND n.type = 'report'
+           AND (n.message LIKE ? OR n.type LIKE ?)${reportUnreadFilter}
+           AND (nr.username IS NOT NULL OR n.senderUsername = ?)
+         ORDER BY n.${orderKey} ${direction} LIMIT ? OFFSET ?`,
+        [req.user.username, like, like, req.user.username, limit, offset]
+      )
+      const [[{ total: reportTotal }]] = await dbp.query(
+        `SELECT COUNT(DISTINCT n.notificationid) AS total 
+         FROM notifications n
+         LEFT JOIN notification_reads nr ON nr.notificationid = n.notificationid AND nr.username = ?
+         WHERE n.replyTo IS NULL
+           AND n.type = 'report'
+           AND (n.message LIKE ? OR n.type LIKE ?)${reportUnreadFilter}
+           AND (nr.username IS NOT NULL OR n.senderUsername = ?)`,
+        [req.user.username, like, like, req.user.username]
+      )
+      rows = reportRows.map(row => ({ 
+        ...row, 
+        isRead: row.senderUsername === req.user.username ? 1 : (row.isReadByUser ? 1 : 0) 
+      }))
+      total = reportTotal
     } else if (mailbox === 'all') {
       // Show both inbox and sent - all messages user is involved in
       // For club-wide: check notification_reads table (readAt IS NULL = unread)
@@ -1223,6 +1263,7 @@ app.get('/notifications', requireAuth, async (req, res) => {
          FROM notifications n
          LEFT JOIN notification_reads nr_check ON n.username IS NULL AND nr_check.notificationid = n.notificationid AND nr_check.username = ?
          WHERE n.replyTo IS NULL
+           AND n.type != 'report'
            AND (n.message LIKE ? OR n.type LIKE ?)${mixedUnreadFilter}
            AND (
              n.username = ? 
@@ -1252,6 +1293,7 @@ app.get('/notifications', requireAuth, async (req, res) => {
          FROM notifications n
          LEFT JOIN notification_reads nr_check ON n.username IS NULL AND nr_check.notificationid = n.notificationid AND nr_check.username = ?
          WHERE n.replyTo IS NULL
+           AND n.type != 'report'
            AND (n.message LIKE ? OR n.type LIKE ?)${mixedUnreadFilter}
            AND (
              n.username = ? 
@@ -1272,6 +1314,7 @@ app.get('/notifications', requireAuth, async (req, res) => {
          FROM notifications n
          LEFT JOIN notification_reads nr_check ON n.username IS NULL AND nr_check.notificationid = n.notificationid AND nr_check.username = ?
          WHERE n.replyTo IS NULL
+           AND n.type != 'report'
            AND (n.message LIKE ? OR n.type LIKE ?)${mixedUnreadFilter}
            AND (
              n.username = ? 
@@ -1319,7 +1362,7 @@ app.get('/notifications', requireAuth, async (req, res) => {
 app.get('/notifications/unreadCount', requireAuth, async (req, res) => {
   console.log(`GET /notifications/unreadCount - User: ${req.user?.username}`)
   try {
-    // Count individual notifications that are unread
+    // Count individual notifications that are unread (excludes reports)
     const [[{ individualCount }]] = await dbp.query(
       `SELECT COUNT(DISTINCT COALESCE(replyTo, notificationid)) AS individualCount 
        FROM notifications 
@@ -1327,7 +1370,8 @@ app.get('/notifications/unreadCount', requireAuth, async (req, res) => {
       [req.user.username]
     )
     
-    // Count club-wide notifications that user received but hasn't read (readAt IS NULL)
+    // Count club-wide and report notifications that user received but hasn't read (readAt IS NULL)
+    // This includes both club-wide emails and reports sent to admins
     const [[{ clubCount }]] = await dbp.query(
       `SELECT COUNT(*) AS clubCount 
        FROM notification_reads nr
@@ -1420,14 +1464,45 @@ app.post('/replyEmail', requireAuth, async (req, res) => {
 })
 
 app.post('/sendEmail', requireAuth, async (req, res) => {
-  const { recipient, message, sendToAllClub, type, link, targetClub } = req.body
-  console.log(`POST /sendEmail - User: ${req.user?.username}, To: ${sendToAllClub ? 'All club' : recipient}`)
+  const { recipient, message, sendToAllClub, sendReport, type, link, targetClub } = req.body
+  console.log(`POST /sendEmail - User: ${req.user?.username}, To: ${sendReport ? 'All admins' : sendToAllClub ? 'All club' : recipient}`)
   if (!message) return res.status(400).json({ message: 'Message required' })
   
   // Validate notification type
-  const notificationType = type && ['event', 'membership', 'email'].includes(type) ? type : 'email'
+  const notificationType = type && ['event', 'membership', 'email', 'report'].includes(type) ? type : 'email'
   
   try {
+    // Handle report to all admins
+    if (sendReport) {
+      // Only SA can send reports
+      if (isSA(req.user)) {
+        return res.status(403).json({ message: 'System Administrators can not send reports' })
+      }
+      
+      // Create single report notification with username=NULL
+      const [result] = await dbp.query(
+        `INSERT INTO notifications (username, senderUsername, clubName, type, message, link, isRead, createdAt) 
+         VALUES (NULL, ?, NULL, 'report', ?, ?, 1, NOW())`,
+        [req.user.username, message, link || null]
+      )
+      const notificationId = result.insertId
+      
+      // Insert rows into notification_reads for all admins (isAdmin=1) except sender
+      const [admins] = await dbp.query(
+        "SELECT username FROM person WHERE isAdmin = 1 AND username != ?",
+        [req.user.username]
+      )
+      if (admins.length > 0) {
+        const values = admins.map(a => [notificationId, a.username, null])
+        await dbp.query(
+          'INSERT INTO notification_reads (notificationid, username, readAt) VALUES ?',
+          [values]
+        )
+      }
+      
+      return res.status(201).json({ message: `Report sent to all admins` })
+    }
+    
     // Check if user is CL/VP or SA for sending to all club members
     if (sendToAllClub) {
       // SA can send to any club, CL/VP to their own clubs

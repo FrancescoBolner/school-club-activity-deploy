@@ -104,7 +104,7 @@ const Home = () => {
             {/* Show Create Club option for users who aren't CL of any club */}
             {!session?.memberships?.some(m => m.role === 'CL') && (
                 <div className="createClub">
-                    <h4 style={{marginBottom: "10px"}}>No club interest you?</h4>
+                    <h4 style={{marginBottom: "10px"}}>{session?.isAdmin ? 'Create a new club.' : 'No club interest you?'}</h4>
                     <button><Link to={"/CreateClub"}>Create Club</Link></button>
                 </div>
             )}

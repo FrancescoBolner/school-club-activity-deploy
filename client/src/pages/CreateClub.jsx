@@ -111,7 +111,7 @@ const CreateClub = () => {
                     
                     {/* SA must select an initial leader */}
                     {isSA && (
-                        <div style={{ marginBottom: "1rem" }}>
+                        <div style={{ margin: "1rem 0", width: "100%", textAlign: "center" }}>
                             <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "bold" }}>
                                 Initial Club Leader: *
                             </label>
@@ -133,19 +133,7 @@ const CreateClub = () => {
                                     style={{ width: "100%", marginBottom: 0 }}
                                 />
                                 {showSuggestions && availableLeaders.length > 0 && !selectedLeader && (
-                                    <div style={{ 
-                                        position: "absolute", 
-                                        top: "100%", 
-                                        left: 0, 
-                                        right: 0, 
-                                        backgroundColor: "#ffffff", 
-                                        border: "1px solid var(--border, #e2e8f0)",
-                                        borderRadius: "0.5rem",
-                                        maxHeight: "200px",
-                                        overflowY: "auto",
-                                        zIndex: 10,
-                                        boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
-                                    }}>
+                                    <div className="recipient-suggestions" style={{ textAlign: "left", maxWidth: "400px", margin: "0 auto" }}>
                                         {availableLeaders.map(user => (
                                             <div 
                                                 key={user.username}
@@ -154,13 +142,8 @@ const CreateClub = () => {
                                                     setLeaderSearch("")
                                                     setShowSuggestions(false)
                                                 }}
-                                                style={{ 
-                                                    padding: "0.75rem 1rem", 
-                                                    cursor: "pointer",
-                                                    borderBottom: "1px solid #e2e8f0",
-                                                    color: "#1f2937"
-                                                }}
-                                                onMouseEnter={(e) => e.target.style.backgroundColor = "#f1f5f9"}
+                                                className="suggestion-item"
+                                                onMouseEnter={(e) => e.target.style.backgroundColor = "#0ea5e9"}
                                                 onMouseLeave={(e) => e.target.style.backgroundColor = "transparent"}
                                             >
                                                 {user.username} <span style={{ opacity: 0.6, fontSize: "0.85rem" }}>({user.role})</span>
@@ -170,7 +153,7 @@ const CreateClub = () => {
                                 )}
                             </div>
                             {selectedLeader && (
-                                <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                                <div style={{ marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem", justifyContent: "center" }}>
                                     <span style={{ color: "var(--success, #10b981)" }}>✓ Selected: {selectedLeader}</span>
                                     <button 
                                         type="button" 

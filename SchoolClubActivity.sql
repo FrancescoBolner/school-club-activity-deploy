@@ -121,6 +121,7 @@ INSERT INTO clubs (`clubName`, `description`, `memberCount`, `memberMax`, `banne
 -- ===== PERSONS =====
 INSERT INTO person (`username`, `password`, `isAdmin`) VALUES
 ('Admin','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK',1),
+('Principal','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK',1),
 ('Francesco','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK',0),
 ('Samuele','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK',0),
 ('Ari','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK',0),
@@ -210,89 +211,75 @@ INSERT INTO person (`username`, `password`, `isAdmin`) VALUES
 ('WhiteCan47','$2a$10$SfoBY49Y..SbmuMc0J8YIe1TTnaMRly/b/OpyFh8VAAhvoai8y.qK',0);
 
 -- ===== MEMBERSHIPS =====
--- This maps users to clubs with their roles. Users can now belong to multiple clubs.
 INSERT INTO membership (`username`, `clubName`, `role`) VALUES
--- Ski club
 ('Francesco','Ski','CL'),
 ('Samuele','Ski','VP'),
 ('Ari','Ski','CM'),
 ('Marta','Ski','CM'),
 ('Igor','Ski','CM'),
 ('Fernanda','Ski','STU'),
--- Basketball club
 ('Ayoub','Basketball','CL'),
 ('Hana','Basketball','VP'),
 ('Giorgie','Basketball','CM'),
 ('Marco_b','Basketball','CM'),
 ('Harry','Basketball','CM'),
 ('Yvonne','Basketball','STU'),
--- Robotics club
 ('Noah','Robotics','CL'),
 ('Isabella','Robotics','VP'),
 ('Kai','Robotics','CM'),
 ('Emma','Robotics','STU'),
--- Book club
 ('Clara','Book','CL'),
 ('David','Book','VP'),
 ('Sara','Book','CM'),
 ('Nina','Book','CM'),
--- Photography club
+('Samuele','Book','VP'),
 ('Mike','Photography','CL'),
 ('Elena','Photography','VP'),
 ('Tomas','Photography','CM'),
 ('Zoe','Photography','STU'),
--- Cooking club
 ('Sofia','Cooking','CL'),
 ('Raoul','Cooking','VP'),
 ('Lena','Cooking','CM'),
 ('Yasmin','Cooking','CM'),
--- Music club
+('Samuele','Cooking','CM'),
 ('Olga','Music','CL'),
 ('Christian','Music','VP'),
 ('Karen','Music','CM'),
 ('Matt','Music','STU'),
--- Chess club
 ('Arthur','Chess','CL'),
 ('Bea','Chess','VP'),
 ('Zach','Chess','CM'),
 ('Paula','Chess','CM'),
--- Hiking club
 ('Sylvia','Hiking','CL'),
 ('Jorge','Hiking','VP'),
 ('Mina','Hiking','CM'),
 ('Kevin','Hiking','STU'),
 ('Eva','Hiking','STU'),
--- Gaming club
 ('Alex','Gaming','CL'),
 ('Bella','Gaming','VP'),
 ('Chris','Gaming','CM'),
+('Samuele','Gaming','CM'),
 ('Nora','Gaming','STU'),
--- Debate club
 ('Nicolas','Debate','CL'),
 ('Priya','Debate','VP'),
 ('Hector','Debate','CM'),
 ('Julia','Debate','STU'),
--- Drama club
 ('Amelia','Drama','CL'),
 ('Simon','Drama','VP'),
 ('Carla','Drama','CM'),
 ('Talia','Drama','STU'),
--- Environmental club
 ('Greta','Environmental','CL'),
 ('Kenji','Environmental','VP'),
 ('Mo','Environmental','CM'),
 ('Ivy','Environmental','STU'),
--- Coding club
 ('Ethan','Coding','CL'),
 ('Rina','Coding','VP'),
 ('Toby','Coding','CM'),
 ('Wei','Coding','STU'),
--- Dance club
 ('Layla','Dance','CL'),
 ('Diego','Dance','VP'),
 ('Helena','Dance','CM'),
 ('Milan','Dance','STU'),
--- Agartha club
 ('TheEnlightenedOne','Agartha','CL'),
 ('TunnelVision','Agartha','VP'),
 ('BasementDweller','Agartha','CM'),
@@ -303,7 +290,6 @@ INSERT INTO membership (`username`, `clubName`, `role`) VALUES
 
 -- ==== EVENTS =====
 INSERT INTO events (`startDate`, `endDate`, `title`, `description`, `accepted`, `clubName`) VALUES
--- Past events
 ('2025-11-15 06:00:00','2025-11-15 20:00:00','First Slope Trip 2025','Full-day slope trip to Alpine Valley. Buses depart 06:00; bring warm clothes.',1,'Ski'),
 ('2025-10-20 10:00:00','2025-10-20 16:00:00','Weekend Tournament','One-day Swiss tournament; prizes for top 3.',1,'Chess'),
 ('2025-08-15 06:00:00','2025-08-17 18:00:00','Overnight Trek','Two-day trek with camping; limited to experienced hikers.',1,'Hiking'),
@@ -315,7 +301,6 @@ INSERT INTO events (`startDate`, `endDate`, `title`, `description`, `accepted`, 
 ('2025-12-05 20:00:00','2025-12-05 22:00:00','Apere-ski Social','Informal meetup: drinks and stories after the slope. Bring your best ski jokes.',1,'Ski'),
 ('2025-12-12 18:00:00','2025-12-12 20:00:00','Holiday Jam','Informal jam session with mulled cider.',1,'Music'),
 ('2025-12-15 18:00:00','2025-12-15 20:00:00','Holiday Book Swap','Bring 3 gently used books to swap with others.',1,'Book'),
--- Future events
 ('2025-12-20 18:30:00','2025-12-20 23:59:00','Après-Ski Night','Hot chocolate, live acoustic set and games at lodge after the slopes. Open to families.',0,'Ski'),
 ('2025-12-22 18:00:00','2025-12-22 22:00:00','Holiday Swap & Sale','Buy/sell/trade board games and accessories.',0,'Gaming'),
 ('2025-12-24 18:00:00',NULL,'Christmas Eve Bake-off','Friendly bake-off and cookie exchange.',0,'Cooking'),
@@ -557,7 +542,12 @@ INSERT INTO notifications (`username`, `senderUsername`, `clubName`, `type`, `me
 (NULL, 'Ayoub', 'Basketball', 'event', 'Holiday social planning meeting Tuesday at 20:00. All members welcome to contribute ideas!', '/ClubPage/Basketball', 0, '2025-12-12 14:00:00', NULL),
 (NULL, 'TheEnlightenedOne', 'Agartha', 'email', 'EMERGENCY: Spotted a lizard person at the grocery store. Meeting tonight at 23:00 to discuss surveillance tactics.', '/ClubPage/Agartha', 0, '2025-12-15 18:00:00', NULL),
 (NULL, 'TheEnlightenedOne', 'Agartha', 'event', 'Reptilian Theory Session starts in 2 hours. Stock up on Monster White. This is going to be a LONG night.', '/ClubPage/Agartha', 0, '2025-12-16 21:00:00', NULL),
-(NULL, 'Ethan', 'Coding', 'event', 'Next hack night: Building a REST API. Perfect for beginners. Pizza on me!', '/ClubPage/Coding', 0, '2025-12-17 11:00:00', NULL);
+(NULL, 'Ethan', 'Coding', 'event', 'Next hack night: Building a REST API. Perfect for beginners. Pizza on me!', '/ClubPage/Coding', 0, '2025-12-17 11:00:00', NULL),
+(NULL, 'Francesco', NULL, 'report', 'URGENT: The Agartha club is not taking this seriously. They meet at 2 AM, consume energy drinks in the basement, and discuss conspiracy theories instead of legitimate academic topics. I strongly recommend reviewing their club status.', NULL, 1, '2025-12-18 14:30:00', NULL),
+(NULL, 'Samuele', NULL, 'report', 'They lied about the gocciole!!!! I bought my own pack for the après-ski event, labeled it with my name, put it in the fridge, and it STILL disappeared! This is a systemic issue and someone needs to investigate. I have witnesses!', NULL, 1, '2025-12-19 09:15:00', NULL),
+(NULL, 'Igor', NULL, 'report', 'Report on ski equipment maintenance: Several sets of skis and poles are showing significant wear. We need budget approval for repairs before the next season. Also, someone keeps leaving their Monster Energy cans in the equipment room. Please address.', NULL, 1, '2025-12-20 16:00:00', NULL),
+(NULL, 'Ayoub', NULL, 'report', 'Basketball court bookings are being monopolized by a few members who aren''t following the rotation schedule. We need clearer enforcement of the booking system to ensure fair access for all members. Attached is the usage log for review.', NULL, 1, '2025-12-22 10:45:00', NULL),
+(NULL, 'TheEnlightenedOne', NULL, 'report', 'Academic inquiry: Our club has uncovered evidence suggesting the school library has hidden documents about historical underground structures beneath campus. We formally request permission to investigate the basement archives. This is for legitimate research purposes.', NULL, 1, '2026-01-05 23:47:00', NULL);
 
 -- ==== NOTIFICATION_READS ====
 INSERT INTO notification_reads (`notificationid`, `username`, `readAt`) VALUES(6, 'Samuele', '2025-10-22 09:00:00'),
@@ -627,7 +617,17 @@ INSERT INTO notification_reads (`notificationid`, `username`, `readAt`) VALUES(6
 (42, 'UndergroundScholar', NULL),
 (42, 'WhiteCan47', NULL),
 (43, 'Rina', NULL),
-(43, 'Toby', NULL);
+(43, 'Toby', NULL),
+(45, 'Admin', '2025-12-18 15:00:00'),
+(45, 'Principal', NULL),
+(46, 'Admin', NULL),
+(46, 'Principal', '2025-12-19 10:00:00'),
+(47, 'Admin', '2025-12-20 17:30:00'),
+(47, 'Principal', '2025-12-20 18:00:00'),
+(48, 'Admin', NULL),
+(48, 'Principal', NULL),
+(49, 'Admin', NULL),
+(49, 'Principal', NULL);
 
 -- ===== Update clubs.memberCount to match actual inserted memberships (counts based on above inserts) =====
 UPDATE clubs SET memberCount = (
