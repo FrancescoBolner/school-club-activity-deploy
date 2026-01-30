@@ -856,10 +856,10 @@ app.put('/joinClubs/:clubName', requireAuth, async (req, res) => {
     const existingMembership = req.user.memberships.find(m => m.clubName === clubName)
     if (existingMembership) return res.status(400).json({ message: 'Already a member or pending in this club' })
     
-    // Check if user has any pending requests elsewhere
+    // Check if user has reached the maximum of 3 pending requests
     const pendingRequests = req.user.memberships.filter(m => m.role === 'STU')
-    if (pendingRequests.length > 0) {
-      return res.status(400).json({ message: 'You have a pending join request in another club. Cancel it first.' })
+    if (pendingRequests.length >= 3) {
+      return res.status(400).json({ message: 'You already have 3 pending requests. Please cancel one before request joining another club.' })
     }
 
     const [clubs] = await dbp.query('SELECT memberCount, memberMax FROM clubs WHERE clubName = ?', [clubName])

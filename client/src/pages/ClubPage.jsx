@@ -201,7 +201,10 @@ const ClubPage = () => {
 
     const deleteClubMutation = useMutation({
         mutationFn: () => api.delete("/clubs/" + clubName),
-        onSuccess: () => navigate("../../"),
+        onSuccess: () => {
+            window.dispatchEvent(new Event('sca:session-change'))
+            navigate("../../")
+        },
         onError: (err) => alert(err.response?.data?.message || "Unable to delete club")
     })
 
@@ -354,7 +357,7 @@ const ClubPage = () => {
                                     <button className="btn-primary" onClick={() => {
                                         if (!session) return navigate("/LogIn")
                                         joinClubMutation.mutate()
-                                    }}>Join / Request</button>
+                                    }}>Request Join</button>
                                 )}
                                 {!isSA && !isMember && !isPending && isClubLeaderAnywhere && (
                                     <button className="btn-muted" disabled title="Club Leaders cannot join other clubs">

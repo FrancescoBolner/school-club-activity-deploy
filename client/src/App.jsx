@@ -200,7 +200,7 @@ function AppContent({ session, unread, handleLogout, darkMode, setDarkMode }) {
           <div className="nav-actions">
             {session ? (
               <>
-                <span className="user-chip">{session.username} <span className="user-chip-info">({session.isAdmin ? 'SA' : session.memberships?.length ? `${session.memberships.length} club${session.memberships.length > 1 ? 's' : ''}` : 'No club'})</span></span>
+                <span className="user-chip">{session.username}<span className="user-chip-info">{session.isAdmin ? '' : session.memberships?.length ? ` (${session.memberships.length} club${session.memberships.length > 1 ? 's)' : ')'}` : '(No club)'}</span></span>
                 <button className="ghost" onClick={handleLogout}>Logout</button>
               </>
             ) : (
