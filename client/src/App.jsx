@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 
 import './App.css';
@@ -117,18 +117,35 @@ function App() {
 // My Clubs Dropdown Component
 function MyClubsDropdown({ memberships }) {
   const [open, setOpen] = useState(false)
+  const dropdownRef = useRef(null)
+  
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+    
+    if (open) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside)
+      }
+    }
+  }, [open])
   
   if (memberships.length === 1) {
     // Single club - just show direct link
     return (
       <Link className="chip-link" to={`/ClubPage/${encodeURIComponent(memberships[0].clubName)}`}>
-        My Club ({memberships[0].role})
+        My Club ({memberships[0].clubName})
       </Link>
     )
   }
   
   return (
-    <div className="dropdown" onMouseLeave={() => setOpen(false)}>
+    <div className="dropdown" ref={dropdownRef}>
       <button className="dropdown-toggle" onClick={() => setOpen(!open)}>
         My Clubs ({memberships.length}) ▾
       </button>
@@ -140,7 +157,7 @@ function MyClubsDropdown({ memberships }) {
               to={`/ClubPage/${encodeURIComponent(m.clubName)}`}
               onClick={() => setOpen(false)}
             >
-              {m.clubName} <span className="role-badge">{m.role}</span>
+              {m.clubName} <span className="role-badge">{m.role === 'STU' ? 'Pending' : m.role}</span>
             </Link>
           ))}
         </div>
@@ -183,7 +200,7 @@ function AppContent({ session, unread, handleLogout, darkMode, setDarkMode }) {
           <div className="nav-actions">
             {session ? (
               <>
-                <span className="user-chip">{session.username} <span className="user-chip-info">({session.isAdmin ? 'SA' : session.memberships?.length ? `${session.memberships.length} club${session.memberships.length > 1 ? 's' : ''}` : 'Student'})</span></span>
+                <span className="user-chip">{session.username} <span className="user-chip-info">({session.isAdmin ? 'SA' : session.memberships?.length ? `${session.memberships.length} club${session.memberships.length > 1 ? 's' : ''}` : 'No club'})</span></span>
                 <button className="ghost" onClick={handleLogout}>Logout</button>
               </>
             ) : (

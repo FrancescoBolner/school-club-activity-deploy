@@ -183,6 +183,7 @@ const ClubPage = () => {
             alert('Join request cancelled.')
             queryClient.invalidateQueries(['members', clubName])
             queryClient.invalidateQueries(['club', clubName])
+            window.dispatchEvent(new Event('sca:session-change'))
         },
         onError: (err) => alert(err.response?.data?.message || 'Failed to cancel request')
     })
@@ -192,6 +193,7 @@ const ClubPage = () => {
         onSuccess: () => {
             queryClient.invalidateQueries(['members', clubName])
             queryClient.invalidateQueries(['club', clubName])
+            window.dispatchEvent(new Event('sca:session-change'))
             navigate("../")
         },
         onError: (err) => alert(err.response?.data?.message || "Unable to quit club")

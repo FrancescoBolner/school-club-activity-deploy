@@ -270,7 +270,7 @@ a {
   top: 100%;
   left: 0;
   z-index: 1000;
-  min-width: 180px;
+  width: fit-content;
   margin-top: var(--space-xs);
   padding: var(--space-xs);
   background: var(--surface);
@@ -288,6 +288,21 @@ a {
   border-radius: var(--radius-xs);
   font-size: var(--font-size-sm);
   transition: background var(--transition-fast);
+}
+
+.dropdown-menu a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  color: var(--text-default);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-size-sm);
+  transition: background var(--transition-fast);
+}
+
+.dropdown-menu a:not(:first-child) {
+  margin-top: var(--space-xs);
 }
 
 .dropdown-menu a:hover {
