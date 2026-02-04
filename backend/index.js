@@ -14,14 +14,13 @@ const app = express()
 // Create a connection pool to the database
 // USE YOUR OWN DATABASE CREDENTIALS
 const db = mysql.createPool({
-    host: '127.0.0.1',
-    port: '3306',
-    user: 'root',
-    password: 'password',
-    database: 'school_club_activity',
+    host: process.env.DB_HOST || 'gkjd6q.h.filess.io',
+    port: process.env.DB_PORT || '61002',
+    user: process.env.DB_USER || 'SchoolClubActivity_bothlieown',
+    password: process.env.DB_PASSWORD || '9b04fe50f9e5d2b2c5a8e3a9d0ea39d6b68d11c7',
+    database: process.env.DB_NAME || 'SchoolClubActivity_bothlieown',
     // Ensure UTF-8 round-trip so accents (e.g. "Après-ski") render correctly
     charset: 'utf8mb4',
-    collation: 'utf8mb4_unicode_ci',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -1803,6 +1802,7 @@ app.use((err, req, res, next) => {
 })
 
 // Start the server
-app.listen(3000, () => {    
-  console.log('Connected to backend on port 3000!')
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => {    
+  console.log(`Connected to backend on port ${PORT}!`)
 })
