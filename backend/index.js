@@ -14,11 +14,11 @@ const app = express()
 // Create a connection pool to the database
 // USE YOUR OWN DATABASE CREDENTIALS
 const db = mysql.createPool({
-    host: process.env.DB_HOST || 'gkjd6q.h.filess.io',
-    port: process.env.DB_PORT || '61002',
-    user: process.env.DB_USER || 'SchoolClubActivity_bothlieown',
-    password: process.env.DB_PASSWORD || '89e354e21d552eb0859e1ba46e76f761a61a014f',
-    database: process.env.DB_NAME || 'SchoolClubActivity_bothlieown',
+    host: process.env.DB_HOST || 'sql7.freesqldatabase.com',
+    port: process.env.DB_PORT || '3306',
+    user: process.env.DB_USER || 'sql7816199',
+    password: process.env.DB_PASSWORD || 'Pylf1Sqm2v',
+    database: process.env.DB_NAME || 'sql7816199',
     // Ensure UTF-8 round-trip so accents (e.g. "Après-ski") render correctly
     charset: 'utf8mb4',
     waitForConnections: true,
