@@ -17,7 +17,7 @@ const db = mysql.createPool({
     host: process.env.DB_HOST || 'gkjd6q.h.filess.io',
     port: process.env.DB_PORT || '61002',
     user: process.env.DB_USER || 'SchoolClubActivity_bothlieown',
-    password: process.env.DB_PASSWORD || '9b04fe50f9e5d2b2c5a8e3a9d0ea39d6b68d11c7',
+    password: process.env.DB_PASSWORD || '89e354e21d552eb0859e1ba46e76f761a61a014f',
     database: process.env.DB_NAME || 'SchoolClubActivity_bothlieown',
     // Ensure UTF-8 round-trip so accents (e.g. "Après-ski") render correctly
     charset: 'utf8mb4',
