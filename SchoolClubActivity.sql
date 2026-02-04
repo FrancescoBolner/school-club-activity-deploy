@@ -16,7 +16,7 @@ CREATE TABLE `clubs` (
     `bannerImage` text DEFAULT NULL COMMENT 'URL of the banner image for the club',
     `bannerColor` varchar(7) DEFAULT '#38bdf8' COMMENT 'Hex color code for banner background when no image is provided',
     PRIMARY KEY (`clubName`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE `person` (
     `username` varchar(191) NOT NULL COMMENT 'Unique username for each person',
@@ -25,7 +25,7 @@ CREATE TABLE `person` (
     `sessionId` varchar(191) DEFAULT NULL COMMENT 'Session identifier for logged-in users; NULL if not logged in',
     PRIMARY KEY (`username`),
     UNIQUE KEY `sessionId` (`sessionId`)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE `membership` (
     `username` varchar(191) NOT NULL COMMENT 'The username of the member',
@@ -35,7 +35,7 @@ CREATE TABLE `membership` (
     KEY `clubName` (`clubName`),
     CONSTRAINT `membership_ibfk_1` FOREIGN KEY (`username`) REFERENCES `person` (`username`) ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT `membership_ibfk_2` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE `events` (
     `eventid` int NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier for each event',
@@ -48,7 +48,7 @@ CREATE TABLE `events` (
     PRIMARY KEY (`eventid`),
     KEY `clubName` (`clubName`),
     CONSTRAINT `events_ibfk_1` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE = InnoDB AUTO_INCREMENT = 22 DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE = InnoDB AUTO_INCREMENT = 22 DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE `comments` (
     `commentid` int NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier for each comment',
@@ -65,7 +65,7 @@ CREATE TABLE `comments` (
     CONSTRAINT `comments_ibfk_3` FOREIGN KEY (`username`) REFERENCES `person` (`username`) ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT `comments_ibfk_4` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT `comments_ibfk_5` FOREIGN KEY (`eventid`) REFERENCES `events` (`eventid`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE = InnoDB AUTO_INCREMENT = 12 DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE = InnoDB AUTO_INCREMENT = 12 DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE `notifications` (
     `notificationid` int NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier for each notification',
@@ -77,7 +77,7 @@ CREATE TABLE `notifications` (
     `link` text DEFAULT NULL COMMENT 'Optional link for the client to open',
     `isRead` tinyint(1) NOT NULL DEFAULT '0' COMMENT 'Whether the notification was read',
     `replyTo` int DEFAULT NULL COMMENT 'ID of the notification this is replying to',
-    `createdAt` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Creation timestamp',
+    `createdAt` datetime NOT NULL COMMENT 'Creation timestamp',
     PRIMARY KEY (`notificationid`),
     KEY `username` (`username`),
     KEY `senderUsername` (`senderUsername`),
@@ -87,7 +87,7 @@ CREATE TABLE `notifications` (
     CONSTRAINT `notifications_ibfk_2` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT `notifications_ibfk_3` FOREIGN KEY (`senderUsername`) REFERENCES `person` (`username`) ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT `notifications_ibfk_4` FOREIGN KEY (`replyTo`) REFERENCES `notifications` (`notificationid`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 CREATE TABLE `notification_reads` (
     `notificationid` int NOT NULL COMMENT 'The club-wide notification ID',
@@ -97,7 +97,7 @@ CREATE TABLE `notification_reads` (
     KEY `username` (`username`),
     CONSTRAINT `notification_reads_ibfk_1` FOREIGN KEY (`notificationid`) REFERENCES `notifications` (`notificationid`) ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT `notification_reads_ibfk_2` FOREIGN KEY (`username`) REFERENCES `person` (`username`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
 -- ===== CLUBS =====
 INSERT INTO clubs (`clubName`, `description`, `memberCount`, `memberMax`, `bannerImage`, `bannerColor`) VALUES
