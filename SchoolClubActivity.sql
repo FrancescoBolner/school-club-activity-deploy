@@ -9,7 +9,7 @@ DROP TABLE IF EXISTS clubs;
 
 -- ====== CREATE TABLES ======
 CREATE TABLE `clubs` (
-    `clubName` varchar(255) NOT NULL COMMENT 'Unique name of the club',
+    `clubName` varchar(191) NOT NULL COMMENT 'Unique name of the club',
     `description` text NOT NULL COMMENT 'Description of the club activities and schedules, can contain HTML formatting',
     `memberCount` int NOT NULL COMMENT 'Current number of members in the club',
     `memberMax` int NOT NULL COMMENT 'Maximum allowed members in the club',
@@ -19,17 +19,17 @@ CREATE TABLE `clubs` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 CREATE TABLE `person` (
-    `username` varchar(255) NOT NULL COMMENT 'Unique username for each person',
+    `username` varchar(191) NOT NULL COMMENT 'Unique username for each person',
     `password` varchar(255) NOT NULL COMMENT 'Password hash for the user account (bcrypt)',
     `isAdmin` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Whether the person is a System Administrator (has all CL powers for ALL clubs)',
-    `sessionId` varchar(255) DEFAULT NULL COMMENT 'Session identifier for logged-in users; NULL if not logged in',
+    `sessionId` varchar(191) DEFAULT NULL COMMENT 'Session identifier for logged-in users; NULL if not logged in',
     PRIMARY KEY (`username`),
     UNIQUE KEY `sessionId` (`sessionId`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
 
 CREATE TABLE `membership` (
-    `username` varchar(255) NOT NULL COMMENT 'The username of the member',
-    `clubName` varchar(255) NOT NULL COMMENT 'The club the member belongs to',
+    `username` varchar(191) NOT NULL COMMENT 'The username of the member',
+    `clubName` varchar(191) NOT NULL COMMENT 'The club the member belongs to',
     `role` varchar(10) NOT NULL DEFAULT 'CM' COMMENT 'Role in the club: CL (Club Leader), VP (Vice President), CM (Club Member), STU (pending join request)',
     PRIMARY KEY (`username`, `clubName`),
     KEY `clubName` (`clubName`),
@@ -44,7 +44,7 @@ CREATE TABLE `events` (
     `startDate` datetime DEFAULT NULL COMMENT 'The start date of the event',
     `endDate` datetime DEFAULT NULL COMMENT 'The end date of the event',
     `accepted` tinyint(1) DEFAULT '0' COMMENT 'Boolean value indicating whether the event is accepted (1) or pending (0)',
-    `clubName` varchar(255) NOT NULL COMMENT 'The club organizing the event',
+    `clubName` varchar(191) NOT NULL COMMENT 'The club organizing the event',
     PRIMARY KEY (`eventid`),
     KEY `clubName` (`clubName`),
     CONSTRAINT `events_ibfk_1` FOREIGN KEY (`clubName`) REFERENCES `clubs` (`clubName`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -55,8 +55,8 @@ CREATE TABLE `comments` (
     `date` datetime DEFAULT NULL COMMENT 'Timestamp of when the comment was made',
     `comment` text NOT NULL COMMENT 'The content of the comment',
     `rating` int NOT NULL DEFAULT '0' COMMENT 'Rating associated with the comment, from 1 to 5; 0 if no rating is given',
-    `username` varchar(255) NOT NULL COMMENT 'The username of the person who made the comment',
-    `clubName` varchar(255) DEFAULT NULL COMMENT 'The club the comment is associated with (NULL if comment is for an event)',
+    `username` varchar(191) NOT NULL COMMENT 'The username of the person who made the comment',
+    `clubName` varchar(191) DEFAULT NULL COMMENT 'The club the comment is associated with (NULL if comment is for an event)',
     `eventid` int DEFAULT NULL COMMENT 'The event the comment is associated with (NULL if comment is for a club)',
     PRIMARY KEY (`commentid`),
     KEY `username` (`username`),
@@ -69,9 +69,9 @@ CREATE TABLE `comments` (
 
 CREATE TABLE `notifications` (
     `notificationid` int NOT NULL AUTO_INCREMENT COMMENT 'Unique identifier for each notification',
-    `username` varchar(255) COMMENT 'Recipient username',
-    `senderUsername` varchar(255) DEFAULT NULL COMMENT 'Sender username if sent by a user',
-    `clubName` varchar(255) DEFAULT NULL COMMENT 'Associated club if any',
+    `username` varchar(191) COMMENT 'Recipient username',
+    `senderUsername` varchar(191) DEFAULT NULL COMMENT 'Sender username if sent by a user',
+    `clubName` varchar(191) DEFAULT NULL COMMENT 'Associated club if any',
     `type` varchar(50) NOT NULL DEFAULT 'info' COMMENT 'Category of notification',
     `message` text NOT NULL COMMENT 'Notification body',
     `link` text DEFAULT NULL COMMENT 'Optional link for the client to open',
@@ -91,7 +91,7 @@ CREATE TABLE `notifications` (
 
 CREATE TABLE `notification_reads` (
     `notificationid` int NOT NULL COMMENT 'The club-wide notification ID',
-    `username` varchar(255) NOT NULL COMMENT 'The user who should receive the notification',
+    `username` varchar(191) NOT NULL COMMENT 'The user who should receive the notification',
     `readAt` datetime DEFAULT NULL COMMENT 'NULL = unread, timestamp = when read',
     PRIMARY KEY (`notificationid`, `username`),
     KEY `username` (`username`),
